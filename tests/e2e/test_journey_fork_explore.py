@@ -16,7 +16,7 @@ mirrors how a user would actually explore alternatives via fork.
 
 Usage::
 
-    pytest tests/e2e/test_journey_fork_explore.py \
+    pytest tests/e2e/test_journey_fork_explore.py \\
         --llm-api-key $LLM_API_KEY -v
 """
 
@@ -87,41 +87,54 @@ def test_fork_explore_alternatives_journey(
     and the original is unaffected, then delete the fork and confirm
     the original still works.
     """
-    # ── Step 1: Create a runner-bound session ───────────────────
+    # ── Step 1: Create a runner-bound session ──────────────
     session_id = create_runner_bound_session(
-        http_client, agent_name=coder_agent, runner_id=live_runner_id
+        http_client,
+        agent_name=coder_agent,
+        runner_id=live_runner_id,
     )
 
-    # ── Step 2: Turn 1 — plant first codeword ──────────────────
+    # ── Step 2: Turn 1 — plant first codeword ─────────────
     resp_id_1 = send_user_message_to_session(
         http_client,
         session_id=session_id,
-        content=f"Remember this codeword: {_CODEWORD_1}. Reply with just OK.",
+        content=(f"Remember this codeword: {_CODEWORD_1}. Reply with just OK."),
     )
-    body_1 = poll_session_until_terminal(http_client, session_id=session_id, response_id=resp_id_1)
+    body_1 = poll_session_until_terminal(
+        http_client,
+        session_id=session_id,
+        response_id=resp_id_1,
+    )
     assert body_1["status"] == "completed", f"turn 1 failed: {body_1.get('error')}"
 
-    # ── Step 3: Turn 2 — plant second codeword ─────────────────
+    # ── Step 3: Turn 2 — plant second codeword ────────────
     resp_id_2 = send_user_message_to_session(
         http_client,
         session_id=session_id,
-        content=f"Also remember: {_CODEWORD_2}. Reply with just OK.",
+        content=(f"Also remember: {_CODEWORD_2}. Reply with just OK."),
     )
-    body_2 = poll_session_until_terminal(http_client, session_id=session_id, response_id=resp_id_2)
+    body_2 = poll_session_until_terminal(
+        http_client,
+        session_id=session_id,
+        response_id=resp_id_2,
+    )
     assert body_2["status"] == "completed", f"turn 2 failed: {body_2.get('error')}"
 
-    # ── Step 4: Fork the session ────────────────────────────────
+    # ── Step 4: Fork the session ──────────────────────────
     fork_resp = http_client.post(f"/v1/sessions/{session_id}/fork", json={})
     assert fork_resp.status_code == 201, f"fork failed: {fork_resp.status_code} {fork_resp.text}"
     fork = fork_resp.json()
     fork_id = fork["id"]
     assert fork_id != session_id
 
-    # ── Step 5: Bind runner to the fork ─────────────────────────
-    patch_resp = http_client.patch(f"/v1/sessions/{fork_id}", json={"runner_id": live_runner_id})
+    # ── Step 5: Bind runner to the fork ───────────────────
+    patch_resp = http_client.patch(
+        f"/v1/sessions/{fork_id}",
+        json={"runner_id": live_runner_id},
+    )
     patch_resp.raise_for_status()
 
-    # ── Step 6: Verify fork carries history from both turns ─────
+    # ── Step 6: Verify fork carries history from both turns
     fork_text = _session_item_texts(http_client, fork_id)
     assert _CODEWORD_1 in fork_text, (
         f"fork must contain turn-1 codeword, items text: {fork_text!r}"
@@ -130,44 +143,45 @@ def test_fork_explore_alternatives_journey(
         f"fork must contain turn-2 codeword, items text: {fork_text!r}"
     )
 
-    # ── Step 7: Continue on the fork — ask for recall ───────────
+    # ── Step 7: Continue on the fork — ask for recall ─────
     fork_resp_id = send_user_message_to_session(
         http_client,
         session_id=fork_id,
-        content=(
-            "What codewords do you remember from earlier in this "
-            "conversation? List them exactly as written."
-        ),
+        content=("List the two codewords I told you earlier. Repeat them exactly as written."),
     )
     fork_body = poll_session_until_terminal(
-        http_client, session_id=fork_id, response_id=fork_resp_id
+        http_client,
+        session_id=fork_id,
+        response_id=fork_resp_id,
     )
     assert fork_body["status"] == "completed", f"fork turn failed: {fork_body.get('error')}"
     fork_reply = _extract_all_text(fork_body)
     assert _CODEWORD_1 in fork_reply, f"fork agent should recall codeword 1, got: {fork_reply!r}"
     assert _CODEWORD_2 in fork_reply, f"fork agent should recall codeword 2, got: {fork_reply!r}"
 
-    # ── Step 8: Verify original is unchanged ────────────────────
+    # ── Step 8: Verify original is unchanged ──────────────
     original_text = _session_item_texts(http_client, session_id)
     # The fork's recall question must NOT appear in the original.
-    assert "codewords do you remember" not in original_text.lower(), (
+    assert "list the two codewords" not in original_text.lower(), (
         f"fork activity leaked into original session: {original_text!r}"
     )
 
-    # ── Step 9: Delete the fork ─────────────────────────────────
+    # ── Step 9: Delete the fork ───────────────────────────
     delete_resp = http_client.delete(f"/v1/sessions/{fork_id}")
     assert delete_resp.status_code == 200, (
         f"delete fork failed: {delete_resp.status_code} {delete_resp.text}"
     )
 
-    # ── Step 10: Original still works after fork deletion ───────
+    # ── Step 10: Original still works after fork deletion ─
     final_resp_id = send_user_message_to_session(
         http_client,
         session_id=session_id,
         content="Reply with just the word PONG.",
     )
     final_body = poll_session_until_terminal(
-        http_client, session_id=session_id, response_id=final_resp_id
+        http_client,
+        session_id=session_id,
+        response_id=final_resp_id,
     )
     assert final_body["status"] == "completed", (
         f"original session broken after fork deletion: {final_body.get('error')}"
