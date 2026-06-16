@@ -2153,20 +2153,18 @@ def test_antigravity_set_api_key_non_aiza_declined_is_not_stored(isolated_config
 
 
 # ── Antigravity SDK-extra install offer (the optional ``antigravity`` extra) ──
-# Unlike Cursor (``cursor-sdk`` is a baseline dep, always installed → no offer),
-# the antigravity SDK ships in an OPTIONAL extra, so a user can paste a Gemini
-# key and still have no SDK. Setup must detect that and offer to install. These
-# tests force detection absent (the SDK is actually present in the test venv).
+# The antigravity SDK ships in an OPTIONAL extra, so a user can paste a key and still
+# have no SDK; setup must detect that and offer to install. These tests force detection
+# absent (the SDK is actually present in the test venv).
 
 
 @pytest.fixture()
 def _antigravity_sdk_absent(monkeypatch):
     """Force ``google-antigravity`` detection to report missing.
 
-    Both ``_run_configure_harnesses_interactive`` (overview row) and
-    ``_manage_antigravity_harness`` (drill-in) resolve
-    ``antigravity_sdk_installed`` from the source module at call time, so
-    patching the module attribute is seen by both.
+    Both call sites (overview row + drill-in) resolve ``antigravity_sdk_installed``
+    from the source module at call time, so patching the module attribute is seen by
+    both.
 
     :param monkeypatch: Pytest monkeypatch fixture.
     """
@@ -2181,10 +2179,8 @@ def test_antigravity_overview_surfaces_install_command_when_sdk_missing(
 ) -> None:
     """L1 overview: the Antigravity row names the extra install command when absent.
 
-    Parallel to the CLI harnesses' "not installed — open to install" sub-line and
-    the databricks extra hint. The exact ``pip install "omnigent[antigravity]"``
-    is shown (escaped so the literal brackets render). Without the SDK-detection
-    branch this line never appears.
+    The exact ``pip install "omnigent[antigravity]"`` is shown (escaped so the literal
+    brackets render). Without the SDK-detection branch this line never appears.
     """
     result = CliRunner().invoke(cli, ["setup", "--no-internal-beta"], input="q\n")
     assert result.exit_code == 0, result.output
@@ -2199,9 +2195,8 @@ def test_antigravity_drillin_offers_install_when_sdk_missing(
 ) -> None:
     """Drilling into Antigravity with the SDK absent presents the install offer.
 
-    The three-choice offer (install / set key anyway / show command) appears on
-    entry. Here the user picks "show the command" (choice 3), which prints the
-    command and falls through to the key menu, then backs out.
+    The user picks "show the command" (choice 3), which prints the command and falls
+    through to the key menu, then backs out.
     """
     # L1 5=Antigravity → install offer 3=show command → key menu q=back → L1 q.
     stdin = "\n".join(["5", "3", "q", "q"]) + "\n"
@@ -2217,11 +2212,9 @@ def test_antigravity_key_settable_when_sdk_missing(
 ) -> None:
     """The Gemini key is still storable when the SDK is absent (no hard block).
 
-    This is the deliberate divergence from pi: the ``antigravity:`` key is
-    independent of the SDK and useful the moment it's installed, so the drill-in
-    offers the install but does NOT gate key management on it. The user declines
-    the install ("set the key anyway" = choice 2), then sets the key — which must
-    persist exactly as it does with the SDK present.
+    The deliberate divergence from pi: the drill-in offers the install but does NOT
+    gate key management on it. The user declines ("set the key anyway" = choice 2),
+    then sets the key, which must persist as it does with the SDK present.
     """
     # L1 5=Antigravity → install offer 2=set key anyway → key menu 1=Set →
     # paste AIza key → key menu q=back → L1 q=quit.
@@ -2239,9 +2232,8 @@ def test_antigravity_install_now_invokes_runner_without_index(
 ) -> None:
     """Choosing "install it now" shells the install with ``omnigent[antigravity]``.
 
-    Mocks the subprocess (never really installs) and asserts the argv targets the
-    extra and carries NO hardcoded index URL / proxy — pip/uv inherit the user's
-    own config. Forces the ``uv``-absent path for a deterministic argv.
+    Mocks the subprocess and asserts the argv targets the extra and carries NO
+    hardcoded index URL / proxy. Forces the ``uv``-absent path for a deterministic argv.
     """
     import subprocess
 

@@ -135,9 +135,8 @@ def test_antigravity_sdk_installed_false_when_namespace_absent(
 ) -> None:
     """A ``ModuleNotFoundError`` (no ``google`` parent namespace) reads as False.
 
-    ``find_spec("google.antigravity")`` imports the parent ``google`` namespace
-    first; when even that is absent it *raises* rather than returning ``None``.
-    The guard must swallow that and report not-installed (not crash setup).
+    ``find_spec`` *raises* (not ``None``) when the parent namespace is absent; the guard
+    must swallow that and report not-installed rather than crash setup.
     """
 
     def _raise(name: str) -> object:
@@ -175,8 +174,8 @@ def test_install_antigravity_sdk_runs_command_then_rechecks(
 ) -> None:
     """Shells the install argv, then reports the post-install detection verdict.
 
-    Mocks the subprocess (never really installs): the SDK "appears" only after
-    the install runs, so the function must re-check and return True.
+    The mocked SDK "appears" only after the install runs, so the function must re-check
+    and return True.
     """
     import subprocess
 
