@@ -102,11 +102,15 @@ _PROVIDER_RESOLUTION_HARNESS: dict[str, str] = {
 }
 
 # Preferred inline family per single-family harness (pi consumes both).
+# NB: ``antigravity`` is intentionally absent — it is Gemini-native and never
+# reaches the generic-provider entry path (_resolve_model_provider_unsafe
+# routes it to _legacy_antigravity_provider), so a lookup here would mean a
+# routing bug. Leaving it out makes that bug fail loud (KeyError) rather than
+# silently advertise OpenAI-family models the worker can never run.
 _KEY_AUTH_FAMILY: dict[str, str] = {
     "claude-sdk": ANTHROPIC_FAMILY,
     "codex": OPENAI_FAMILY,
     "openai-agents-sdk": OPENAI_FAMILY,
-    "antigravity": OPENAI_FAMILY,
 }
 
 # Multi-family providers (pi): anthropic first, matching _apply_provider_to_pi.
@@ -319,6 +323,15 @@ def _resolve_model_provider_unsafe(spec: Any, harness: str | None) -> ResolvedMo
     fallthrough (see :func:`_provider_from_legacy_auth`) — the builders
     diverge in which legacy auth fields they actually consume.
 
+    Antigravity is the exception: it is Gemini-native and
+    :func:`~omnigent.runtime.workflow.configure_agent_harness_with_provider`
+    rejects it, so its spawn-env builder NEVER consumes a generic
+    ``providers:`` entry. Routing it through ``_resolve_provider_for_build``
+    (which would resolve a named/default provider into an
+    :data:`~omnigent.onboarding.provider_config.OPENAI_FAMILY` entry) would
+    advertise OpenAI-family/gateway models the worker can never run, so it
+    skips step 1 and mirrors ``_build_antigravity_spawn_env`` directly.
+
     :param spec: The worker's (sub-)agent spec.
     :param harness: The worker's harness id, e.g. ``"pi"``.
     :returns: A :class:`ResolvedModelProvider`.
@@ -333,6 +346,13 @@ def _resolve_model_provider_unsafe(spec: Any, harness: str | None) -> ResolvedMo
             kind=NONE_KIND,
             detail=f"harness {harness or 'unknown'!r} has no model-provider resolution",
         )
+
+    if harness_type == "antigravity":
+        # Gemini-native: the generic-provider path is precluded by the
+        # antigravity guard in configure_agent_harness_with_provider, so the
+        # spawn-env builder only ever resolves an api_key / Vertex / ambient
+        # key. Mirror that directly and never consult _resolve_provider_for_build.
+        return _legacy_antigravity_provider(spec)
 
     entry = _resolve_provider_for_build(spec, harness_type=harness_type)  # type: ignore[arg-type]  # AgentHarnessType narrowed by the map above
     if entry is not None:
@@ -356,13 +376,11 @@ def _provider_from_legacy_auth(spec: Any, harness_type: str) -> ResolvedModelPro
     """
     if harness_type == "claude-sdk":
         return _legacy_claude_sdk_provider(spec)
-    if harness_type in ("openai-agents-sdk", "antigravity"):
-        # Both resolve spec/global ``auth:`` api-key blocks via this branch.
-        # NB: the antigravity spawn-env builder (unlike openai-agents) ignores
-        # ``config["profile"]`` — it's Gemini-native with no Databricks/gateway
-        # path — so for a profile-only antigravity spec this readout can
-        # over-report; api-key (and Vertex) specs resolve correctly.
+    if harness_type == "openai-agents-sdk":
         return _legacy_openai_agents_provider(spec)
+    # NB: antigravity never reaches here — _resolve_model_provider_unsafe
+    # routes it to _legacy_antigravity_provider directly (it is Gemini-native
+    # and shares none of the gateway/Databricks legacy auth these branches read).
     return _legacy_profile_only_provider(spec, harness_type)
 
 
@@ -468,6 +486,78 @@ def _legacy_openai_agents_provider(spec: Any) -> ResolvedModelProvider:  # type:
     if prefix is not None:
         return prefix
     return ResolvedModelProvider(kind=NONE_KIND, detail="no model provider configured")
+
+
+def _legacy_antigravity_provider(spec: Any) -> ResolvedModelProvider:  # type: ignore[explicit-any]  # structural spec stubs in tests
+    """Mirror ``_build_antigravity_spawn_env``'s Gemini-native auth resolution.
+
+    Antigravity is Gemini-native: its spawn-env builder consumes ONLY a
+    direct API key — spec ``executor.auth`` api_key (``base_url`` dropped),
+    the ``antigravity:`` config block, the legacy global ``auth:`` api_key,
+    or an ambient ``GEMINI_API_KEY`` / ``ANTIGRAVITY_API_KEY`` — or opts into
+    Vertex AI via ``executor.config`` vertex/project/location. It never reads
+    a ``DatabricksAuth``, ``executor.profile`` / ``config["profile"]``, or a
+    generic ``providers:`` entry, and has no OpenAI-compatible ``base_url``.
+
+    There is no Gemini model-listing endpoint wired into this catalog (and no
+    base URL to fetch from), so this always resolves to ``kind="none"`` — the
+    dispatch gate then passes the spec's model through unchanged and
+    ``sys_list_models`` reports the worker as non-enumerable rather than
+    fabricating an OpenAI-family list the worker can never run. The
+    :attr:`~ResolvedModelProvider.detail` records whether a credential was
+    found, so the readout still distinguishes a configured worker from an
+    unconfigured one.
+
+    :param spec: The worker's (sub-)agent spec.
+    :returns: A :class:`ResolvedModelProvider` with ``kind="none"``.
+    """
+    from omnigent.spec.types import ApiKeyAuth
+
+    config = spec.executor.config
+    if config.get("vertex"):
+        return ResolvedModelProvider(
+            kind=NONE_KIND,
+            detail="antigravity Vertex AI (Gemini-native; no enumerable model listing)",
+        )
+
+    spec_auth = spec.executor.auth
+    if isinstance(spec_auth, ApiKeyAuth) and spec_auth.api_key:
+        return ResolvedModelProvider(
+            kind=NONE_KIND,
+            detail="antigravity api_key auth (Gemini-native; no enumerable model listing)",
+        )
+    if spec_auth is None and _antigravity_ambient_key_present():
+        return ResolvedModelProvider(
+            kind=NONE_KIND,
+            detail="antigravity ambient Gemini key (Gemini-native; no enumerable model listing)",
+        )
+    return ResolvedModelProvider(
+        kind=NONE_KIND,
+        detail="no Gemini credential configured for the antigravity harness",
+    )
+
+
+def _antigravity_ambient_key_present() -> bool:
+    """Return whether ``_build_antigravity_spawn_env`` would find a fallback key.
+
+    Mirrors the builder's no-spec-auth fallback chain: the dedicated
+    ``antigravity:`` config block, then the legacy global ``auth:`` api_key,
+    then an ambient ``GEMINI_API_KEY`` / ``ANTIGRAVITY_API_KEY``.
+
+    :returns: ``True`` when any of those resolves a key.
+    """
+    from omnigent.onboarding.antigravity_auth import (
+        ANTIGRAVITY_ENV_VARS,
+        resolve_antigravity_api_key,
+    )
+    from omnigent.runtime.workflow import _load_global_auth
+    from omnigent.spec.types import ApiKeyAuth
+
+    if resolve_antigravity_api_key() is not None:
+        return True
+    if isinstance(_load_global_auth(), ApiKeyAuth):
+        return True
+    return any(os.environ.get(var) for var in ANTIGRAVITY_ENV_VARS)
 
 
 def _legacy_profile_only_provider(spec: Any, harness_type: str) -> ResolvedModelProvider:  # type: ignore[explicit-any]  # structural spec stubs in tests

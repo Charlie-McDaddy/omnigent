@@ -427,3 +427,80 @@ def test_describe_active_credential_cli_config() -> None:
     # No inline endpoint/model: both live in the CLI's own config.
     assert cred.base_url is None
     assert cred.model is None
+
+
+def test_describe_active_credential_antigravity_reports_gemini_not_openai(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The /model readout names the Gemini key for an antigravity harness.
+
+    The regression this guards: ``harness_family("antigravity")`` is
+    ``"openai"`` (a family-keyed lookup convenience), so the readout used to
+    resolve the OpenAI default provider and show an OpenAI credential for a
+    Gemini-native agent. It must instead describe the ``antigravity:`` block's
+    Gemini key — with no ``openai`` family / base_url — even when an OpenAI
+    provider is the configured default.
+    """
+    from omnigent.onboarding.provider_config import describe_active_credential
+
+    monkeypatch.setenv("MY_GEMINI", "AIza-test")
+    config = {
+        "antigravity": {"api_key_ref": "env:MY_GEMINI"},
+        "providers": {
+            "openai": {
+                "kind": "key",
+                "default": True,
+                "openai": {"base_url": "https://api.openai.com/v1", "api_key": "$OPENAI_API_KEY"},
+            }
+        },
+    }
+    cred = describe_active_credential(config, "antigravity")
+    assert cred is not None
+    assert cred.provider_name == "antigravity"
+    assert cred.kind == "key"
+    # Crucially NOT the openai family / its base_url.
+    assert cred.family is None
+    assert cred.base_url is None
+    assert cred.source == "env:MY_GEMINI"
+
+
+def test_describe_active_credential_antigravity_alias_spelling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The readout special-case also fires for the ``agy`` alias spelling."""
+    from omnigent.onboarding.provider_config import describe_active_credential
+
+    monkeypatch.setenv("MY_GEMINI", "AIza-test")
+    config = {"antigravity": {"api_key_ref": "env:MY_GEMINI"}}
+    cred = describe_active_credential(config, "agy")
+    assert cred is not None
+    assert cred.provider_name == "antigravity"
+
+
+def test_describe_active_credential_antigravity_none_when_unconfigured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With no Gemini key (block or ambient), the antigravity readout is None."""
+    from omnigent.onboarding.provider_config import describe_active_credential
+
+    for var in ("GEMINI_API_KEY", "ANTIGRAVITY_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    assert describe_active_credential({}, "antigravity") is None
+
+
+def test_provider_family_for_harness_antigravity_is_google() -> None:
+    """Antigravity reports its own ``google`` family, not ``openai``.
+
+    The fork/switch model-carry decision (server ``_same_provider_family`` /
+    the ap-web ``harnessFamily`` reset hint) keys off this. Reporting
+    ``openai`` would (1) wrongly copy an OpenAI model id into a Gemini-native
+    agent on a codex→antigravity switch, and (2) disagree with the UI, which
+    reports ``google``. Accepts the alias spellings too.
+    """
+    from omnigent.onboarding.provider_config import GOOGLE_FAMILY
+
+    assert provider_family_for_harness("antigravity") == GOOGLE_FAMILY
+    assert provider_family_for_harness("agy") == GOOGLE_FAMILY
+    assert provider_family_for_harness("google-antigravity") == GOOGLE_FAMILY
+    # It is distinct from openai, so a codex↔antigravity switch is cross-family.
+    assert provider_family_for_harness("antigravity") != provider_family_for_harness("codex")
