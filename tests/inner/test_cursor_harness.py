@@ -31,7 +31,6 @@ def test_create_app_returns_fastapi_with_required_routes() -> None:
 
 def test_executor_factory_reads_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HARNESS_CURSOR_MODEL", "gpt-5")
-    monkeypatch.setenv("HARNESS_CURSOR_PATH", "/usr/local/bin/cursor-agent")
     monkeypatch.setenv("HARNESS_CURSOR_CWD", "/tmp/test-cwd")
     monkeypatch.setenv("HARNESS_CURSOR_API_KEY", "cur_secret")
     monkeypatch.setenv("HARNESS_CURSOR_AGENT_NAME", "demo")
@@ -48,7 +47,6 @@ def test_executor_factory_reads_env_vars(monkeypatch: pytest.MonkeyPatch) -> Non
         cursor_harness._build_cursor_executor()
 
     assert captured["model"] == "gpt-5"
-    assert captured["cursor_path"] == "/usr/local/bin/cursor-agent"
     assert captured["cwd"] == "/tmp/test-cwd"
     assert captured["api_key"] == "cur_secret"
     assert captured["agent_name"] == "demo"
@@ -85,7 +83,6 @@ def test_executor_factory_unset_optional_env_passes_none(
         cursor_harness._build_cursor_executor()
 
     assert captured["model"] is None
-    assert captured["cursor_path"] is None
     assert captured["cwd"] is None
     assert captured["api_key"] is None
     assert captured["bundle_dir"] is None
