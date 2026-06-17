@@ -45,6 +45,17 @@ def _dewrap(screen: str) -> str:
     return screen.replace("\n", "")
 
 
+def _echo_only_on_run(marker: str) -> str:
+    """An ``echo`` whose *typed* form can't contain *marker* — only its output can.
+
+    The empty ``""`` splits the literal in the keystroke echo (and in any
+    ``_dewrap`` join of the wrapped command line), so a needle search proves
+    the command produced output rather than merely that it was typed.
+    """
+    mid = len(marker) // 2
+    return f'echo {marker[:mid]}""{marker[mid:]}'
+
+
 def _bash_spec(cwd: Path, *, allow_cwd_override: bool = False) -> TerminalEnvSpec:
     return TerminalEnvSpec(
         command="bash",
@@ -190,22 +201,38 @@ async def test_cwd_override_anchors_live_shell_in_subdirectory(
 async def test_ctrl_c_interrupts_running_command(
     reg: TerminalRegistry, shutdown_terminals: None, tmp_path: Path
 ) -> None:
-    """``keys="C-c"`` interrupts a running foreground command."""
+    """``keys="C-c"`` interrupts a running foreground command.
+
+    Affirmative, not merely "the prompt recovered": C-c is sent only after
+    the foreground job's own output proves it is executing (not still at an
+    empty prompt), the sleep is long enough that an ineffective C-c leaves
+    the recovery echo queued behind it past the poll budget, and the job's
+    post-sleep marker must be absent — so a no-op C-c fails the test.
+    """
     instance = await reg.launch("conv_a", "bash", "s1", _bash_spec(tmp_path))
 
-    await instance.send(text="sleep 120", keys="Enter")
-    # Let bash fork `sleep` before interrupting; a C-c that lands first
-    # only edits the command line. Roomy for loaded CI.
-    await asyncio.sleep(1.0)
+    running = _echo_only_on_run("FOREGROUND_RUNNING")
+    not_interrupted = _echo_only_on_run("SLEEP_FINISHED_NOT_INTERRUPTED")
+    await instance.send(text=f"{running} && sleep 120 && {not_interrupted}", keys="Enter")
+
+    started = await _read_until(instance, "FOREGROUND_RUNNING")
+    assert "FOREGROUND_RUNNING" in started, (
+        "foreground job never started, so C-c would land on an empty prompt and "
+        f"prove nothing. Last pane:\n{started!r}"
+    )
 
     interrupt = await instance.send(text=None, keys="C-c")
     assert interrupt.get("status") == "sent", f"C-c send failed: {interrupt!r}"
 
-    await instance.send(text="echo INTERRUPT_RECOVERED_OK", keys="Enter")
+    await instance.send(text=_echo_only_on_run("INTERRUPT_RECOVERED_OK"), keys="Enter")
     screen = await _read_until(instance, "INTERRUPT_RECOVERED_OK")
     assert "INTERRUPT_RECOVERED_OK" in screen, (
-        "marker echo did not appear after C-c, so the foreground `sleep` was "
-        f"never interrupted. Last pane:\n{screen!r}"
+        "recovery echo never ran, so the foreground `sleep` was not interrupted "
+        f"and still holds the shell. Last pane:\n{screen!r}"
+    )
+    assert "SLEEP_FINISHED_NOT_INTERRUPTED" not in screen, (
+        "the sleep ran to completion, so C-c did not interrupt the foreground "
+        f"command list. Last pane:\n{screen!r}"
     )
 
 
