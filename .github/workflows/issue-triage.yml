@@ -121,9 +121,10 @@ jobs:
 
           # Filter out the current issue from duplicate candidates.
           python3 -c "
-          import json, pathlib
+          import json, pathlib, os
+          issue_number = int(os.environ['ISSUE_NUMBER'])
           dupes = json.loads(pathlib.Path('/tmp/duplicates.json').read_text())
-          dupes = [d for d in dupes if d['number'] != $ISSUE_NUMBER]
+          dupes = [d for d in dupes if d['number'] != issue_number]
           pathlib.Path('/tmp/duplicates.json').write_text(json.dumps(dupes))
           "
 
@@ -331,6 +332,7 @@ jobs:
 
           labels_add = []
           labels_remove = []
+          dup = None
 
           if result.get("needs_info"):
               labels_add.append("needs-info")
@@ -430,7 +432,7 @@ jobs:
           bash /tmp/triage_commands.sh
 
           # Round-robin assign engineer for P0/P1 issues, with domain routing.
-          priority=$(echo "$result" | jq -r '.priority // empty')
+          priority=$(jq -r '.priority // empty' /tmp/triage_result.json)
           if [ "$priority" = "P0-critical" ] || [ "$priority" = "P1-high" ]; then
             python3 <<'PYEOF'
           import json, pathlib, os
