@@ -10,13 +10,13 @@
 # .github/MAINTAINER. Last matching pattern wins, so the `*` default is first
 # and more specific paths override it below.
 #
-# ---------------------------------------------------------------------------
-# DRAFT mapping: seeded from `git log` authorship per area, which is thin for
-# this repo (much of it landed via an internal import). Treat the per-area
-# owners as a starting point and correct them to reflect real ownership.
-# ---------------------------------------------------------------------------
+# Per-area owners are seeded from the full commit history of the upstream
+# repo (databricks-eng/agent-framework), mapped to public handles by author.
+# A few areas have a top contributor who is not in MAINTAINER (e.g. inner /
+# runner / spec / tools); those list the next most-active maintainers.
+# Still worth a sanity check against real ownership.
 #
-# ROUND-ROBIN / even distribution: the `*` default below points at a team
+# ROUND-ROBIN / even distribution: the `*` default points at a team
 # (@omnigent-ai/maintainers). Create that team and set its "Code review
 # assignment" to round-robin (load-balance) so unowned PRs are distributed
 # across maintainers instead of pinging everyone. Until the team exists,
@@ -28,32 +28,41 @@
 *                          @omnigent-ai/maintainers
 
 # Repo automation / CI
-/.github/                  @PattaraS @serena-ruan
+/.github/                  @PattaraS @dhruv0811
 
 # Web UI
-/ap-web/                   @serena-ruan @SabhyaC26
+/ap-web/                   @SabhyaC26 @serena-ruan @daniellok-db
 
 # Core agent runtime & harnesses
 /omnigent/inner/           @SabhyaC26 @TomeHirata
-/omnigent/runner/          @SabhyaC26 @PattaraS
-/omnigent/runtime/         @SabhyaC26
-/omnigent/server/          @ckcuslife-source
-/omnigent/onboarding/      @SabhyaC26
-/omnigent/policies/        @TomeHirata
-/omnigent/spec/            @SabhyaC26
+/omnigent/runner/          @SabhyaC26 @TomeHirata
+/omnigent/runtime/         @TomeHirata @dhruv0811
+/omnigent/server/          @dbczumar @dhruv0811
+/omnigent/onboarding/      @dhruv0811 @dbczumar
+/omnigent/policies/        @TomeHirata @SabhyaC26
+/omnigent/spec/            @dhruv0811 @SabhyaC26
 /omnigent/llms/            @dhruv0811
-/omnigent/host/            @PattaraS @dhruv0811
-/omnigent/sandbox/         @dhruv0811
+/omnigent/host/            @fanzeyi @dhruv0811
+/omnigent/sandbox/         @dhruv0811 @SabhyaC26
 /omnigent/environments/    @dhruv0811
-/omnigent/db/              @dhruv0811
-/omnigent/stores/          @dhruv0811
-/omnigent/repl/            @dhruv0811
+/omnigent/db/              @dhruv0811 @fanzeyi
+/omnigent/stores/          @serena-ruan @fanzeyi
+/omnigent/terminals/       @SabhyaC26 @dhruv0811
+/omnigent/tools/           @SabhyaC26 @dbczumar
+/omnigent/client_tools/    @dhruv0811
+/omnigent/entities/        @TomeHirata @SabhyaC26
+/omnigent/repl/            @dhruv0811 @SabhyaC26
+/omnigent/resources/       @dhruv0811
 
 # Deploy targets
-/deploy/                   @dbczumar
+/deploy/                   @dhruv0811 @PattaraS
+
+# Python / UI SDKs
+/sdks/                     @fanzeyi @TomeHirata
 
 # Tests
-/tests/                    @TomeHirata @PattaraS
+/tests/                    @PattaraS @TomeHirata
 
-# Design docs
-/designs/                  @TomeHirata @serena-ruan
+# Docs & design
+/docs/                     @dhruv0811 @dbczumar
+/designs/                  @PattaraS @dhruv0811
