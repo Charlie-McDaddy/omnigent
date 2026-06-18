@@ -8884,11 +8884,11 @@ def _same_provider_family(a: Agent, b: Agent) -> bool:
 def _agent_is_native(agent: Agent) -> bool:
     """Return whether an agent runs a native CLI harness.
 
-    Loads the agent's spec to read its ``harness_kind``. A native target
-    (claude-native / codex-native) is the only case where a fork needs the
-    transcript-rebuild carry path — SDK targets replay the Omnigent
-    transcript as context on their own. Returns ``False`` when the bundle
-    can't be loaded (treated as non-native).
+    Loads the agent's spec to read its ``harness_kind``. Native targets run
+    a vendor TUI in a terminal (claude-native / codex-native / pi-native /
+    cursor-native). This is broader than "can replay fork history"; use
+    ``_agent_carries_native_fork_history`` for that narrower gate. Returns
+    ``False`` when the bundle can't be loaded (treated as non-native).
 
     :param agent: The agent whose harness to classify.
     :returns: ``True`` for a native CLI harness, else ``False``.

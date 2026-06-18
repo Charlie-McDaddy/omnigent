@@ -770,6 +770,25 @@ async def test_fork_switch_404_unknown_target() -> None:
             False,
             {"omnigent.ui": "terminal", "omnigent.wrapper": "codex-native-ui"},
         ),
+        # cursor/pi targets are native terminal-first harnesses, but they
+        # cannot replay fork history (no resumable native session and no TUI
+        # transcript import), so do not stamp carry_history_into_native.
+        (
+            "claude_sdk",
+            "cursor-native",
+            False,
+            False,
+            False,
+            {"omnigent.ui": "terminal", "omnigent.wrapper": "cursor-native-ui"},
+        ),
+        (
+            "claude_sdk",
+            "pi-native",
+            False,
+            False,
+            False,
+            {"omnigent.ui": "terminal", "omnigent.wrapper": "pi-native-ui"},
+        ),
         # native → SDK, same family: model carries, but an SDK target
         # replays the transcript itself so no native-rebuild marker is set.
         # The clone drops terminal-first mode (chat) — the bug this fixes.
@@ -801,13 +820,13 @@ async def test_fork_switch_model_and_carry_gating(
     """The switch gates model copy + native carry + UI mode on the target.
 
     A model id is provider-bound, so ``copy_model_settings`` must be True
-    only within a family. ``carry_history_into_native`` must be True for
-    ANY native target — same-family rebuilds via clone-or-items, cross-
-    family via items only — while SDK targets replay history themselves so
-    they never set it. ``resume_source_native_session`` must be False on a
-    cross-family switch so the store skips the fork-source directive (the
-    source's native transcript is the wrong format; a clone attempt would
-    fail and launch fresh). ``presentation_labels`` must reflect the TARGET
+    only within a family. ``carry_history_into_native`` must be True only for
+    native targets that can replay fork history (claude/codex); cursor/pi
+    targets are terminal-first but launch fresh, and SDK targets replay
+    history themselves so they never set it. ``resume_source_native_session``
+    must be False on a cross-family switch so the store skips the fork-source
+    directive (the source's native transcript is the wrong format; a clone
+    attempt would fail and launch fresh). ``presentation_labels`` must reflect the TARGET
     harness so the clone's UI mode is right — an SDK target drops
     terminal-first mode (``{}``), a native target sets it; copying the
     source's would leave an SDK clone of a native session with a stale
@@ -840,7 +859,7 @@ async def test_fork_switch_model_and_carry_gating(
     )
     assert fork_call["carry_history_into_native"] is expect_carry, (
         f"{source_harness}->{target_harness}: carry_history_into_native should "
-        f"be {expect_carry} (native rebuild for any native target; never for SDK)."
+        f"be {expect_carry} (only native harnesses with replayable fork history)."
     )
     assert fork_call["resume_source_native_session"] is expect_resume_source, (
         f"{source_harness}->{target_harness}: resume_source_native_session should "
