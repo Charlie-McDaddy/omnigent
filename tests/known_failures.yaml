@@ -60,11 +60,6 @@ skips:
     cluster: repl-pexpect-cli
     mode: skip
 
-  - id: tests/e2e/omnigent/test_run_harness_without_agent_e2e.py::test_run_harness_without_agent_live_repl_round_trip[openai-agents]
-    reason: "No-AGENT harness round-trip openai-agents, same family."
-    issue: 523
-    cluster: repl-pexpect-cli
-    mode: skip
 
 
   - id: tests/e2e/test_claude_coder_sandbox.py::test_write_blocked_outside_workspace
