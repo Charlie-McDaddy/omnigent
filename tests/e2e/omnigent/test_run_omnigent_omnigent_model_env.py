@@ -62,6 +62,7 @@ def _run_omnigent_with_model_env(
     omnigent_repo_root: Path,
     mock_credentials_env: dict[str, str],
     tmp_path: Path,
+    harness: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """
     Run ``omnigent run <minimal>.yaml -p "..."`` with ``OMNIGENT_MODEL`` set.
@@ -100,7 +101,8 @@ def _run_omnigent_with_model_env(
             "-p",
             _PROMPT,
             "--no-session",
-        ],
+        ]
+        + (["--harness", "openai-agents"] if harness else []),
         env=env,
         cwd=str(omnigent_repo_root),
         capture_output=True,
@@ -136,6 +138,7 @@ def test_omnigent_model_env_var_drives_successful_run(
         omnigent_repo_root=omnigent_repo_root,
         mock_credentials_env=mock_credentials_env,
         tmp_path=tmp_path,
+        harness="openai-agents",
     )
 
     # Non-zero exit means either the env var never reached the executor block
