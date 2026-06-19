@@ -586,6 +586,7 @@ def test_host_death_kills_runners(
 # cannot be relocated into CI or mocked. The server-side handshake ordering
 # is covered by tests/server/integration/test_session_host_launch.py.
 
+
 @pytest.mark.skip(
     reason=(
         "claude-native host-restart e2e requires real `claude` + `tmux` CLIs "
