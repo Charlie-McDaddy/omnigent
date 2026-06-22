@@ -96,7 +96,7 @@ the Python reducer at
 | `src/lib/types.ts`            | minimal subset of `omnigent_client/_types.py` |
 | `src/lib/sse.ts`              | `omnigent_client/_sse.py`                     |
 | `src/lib/blockStream.ts`      | `omnigent_client/_stream.py`                  |
-| `src/lib/blockStream.test.ts` | `tests/unit/frontends/sdk/test_stream.py`          |
+| `src/lib/blockStream.test.ts` | `tests/frontends/sdk/test_stream.py`          |
 
 There is **no cross-language CI gate** today. When `_stream.py`
 changes for a real bug (e.g. new harness quirk, dedup edge case), the
