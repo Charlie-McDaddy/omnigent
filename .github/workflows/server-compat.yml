@@ -16,6 +16,10 @@ name: Server Backwards-Compat
 #   schedule            nightly; pins the latest non-rc release tag.
 
 on:
+  # TEMP(server-compat smoke): run on PR pushes so the harness executes on
+  # Actions before #896 merges (workflow_dispatch needs the file on main).
+  # REVERT before merge — compat is meant to be dispatch/nightly only.
+  pull_request:
   workflow_dispatch:
     inputs:
       server_version:
@@ -60,10 +64,9 @@ jobs:
       max-parallel: 4
       matrix:
         include:
+          # TEMP(server-compat smoke): single shard for the maiden PR run.
+          # Restore all 4 shards before merge.
           - { shard_id: 0, num_shards: 4 }
-          - { shard_id: 1, num_shards: 4 }
-          - { shard_id: 2, num_shards: 4 }
-          - { shard_id: 3, num_shards: 4 }
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
@@ -195,9 +198,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # TEMP(server-compat smoke): single harness for the maiden PR run.
+          # Restore openai-agents + codex legs before merge.
           - { harness: claude-sdk, model: databricks-claude-sonnet-4-6, workers: 4 }
-          - { harness: openai-agents, model: databricks-gpt-5-4-mini, workers: 4 }
-          - { harness: codex, model: databricks-gpt-5-5, workers: 2 }
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
