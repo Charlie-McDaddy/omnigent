@@ -179,10 +179,6 @@ accept over HTTPS. Three options:
    from the host). Examples: AWS ALB with ACM cert, Cloudflare in
    "Full" SSL mode, Fly.io / Cloud Run / Render platform certs.
 
-3. **EC2 with Terraform** — `deploy/aws/` wires Caddy + Let's Encrypt
-   into the EC2 user-data automatically when you set `domain_name`
-   in `terraform.tfvars`. See [`../aws/README.md`](../aws/README.md).
-
 ## Header-proxy mode (for deploys behind an existing SSO proxy)
 
 If you already have oauth2-proxy, Databricks Apps, AWS ALB OIDC,
