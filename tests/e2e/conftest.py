@@ -960,6 +960,82 @@ def register_inline_agent(
     return name
 
 
+def register_dir_agent_with_mock_llm(
+    client: httpx.Client,
+    *,
+    agent_dir: Path,
+    name: str,
+    model: str,
+    mock_llm_base_url: str,
+) -> str:
+    """
+    Register a directory-bundle agent that ships its function tools as
+    Python source under ``tools/python/``, routed at a mock LLM.
+
+    Unlike :func:`register_inline_agent` (a single ``<name>.yaml`` whose
+    tool callables are dotted import paths), this tars *agent_dir* — whose
+    ``tools/python/*.py`` files the server loads by absolute file path from
+    the unpacked bundle (auto-discovered, like the ``archer`` fixture). So
+    the tools resolve on any server version without the server importing
+    the repo's ``tests/`` tree — the server-version backwards-compat failure
+    mode that dotted ``tests.*`` callables hit when the server is isolated.
+
+    The bundle's ``config.yaml`` is stamped per call: ``name`` and
+    ``executor.model`` are overridden and an ``executor.auth`` api-key block
+    is injected so the openai-agents harness hits the mock server.
+
+    :param client: HTTP client pointed at the server.
+    :param agent_dir: Fixture dir with ``config.yaml`` + ``tools/python/*.py``,
+        e.g. ``tests/resources/agents/decorator-tools``.
+    :param name: Agent name; suffixed per rerun attempt like
+        :func:`register_inline_agent` so llm_flaky rotation isn't defeated.
+    :param model: Mock model key (must match the ``configure_mock_llm`` key).
+    :param mock_llm_base_url: Mock server base URL including ``/v1``.
+    :returns: The registered agent name (use the return value, not *name*).
+    """
+    import json as _json
+
+    attempt = current_attempt()
+    if attempt > 0:
+        name = f"{name}-r{attempt}"
+
+    config = yaml.safe_load((agent_dir / "config.yaml").read_text())
+    config["name"] = name
+    executor = config.setdefault("executor", {})
+    executor["model"] = resolve_model(model)
+    executor["auth"] = {
+        "type": "api_key",
+        "api_key": "mock-key",
+        "base_url": mock_llm_base_url,
+    }
+
+    with io.BytesIO() as buf:
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            cfg_bytes = yaml.dump(config).encode()
+            info = tarfile.TarInfo("config.yaml")
+            info.size = len(cfg_bytes)
+            tar.addfile(info, io.BytesIO(cfg_bytes))
+            # Ship the rest of the bundle (tools/python/*.py, etc.) verbatim;
+            # the stamped config.yaml above replaces the on-disk one.
+            for entry in sorted(agent_dir.rglob("*")):
+                if not entry.is_file() or entry.relative_to(agent_dir) == Path("config.yaml"):
+                    continue
+                tar.add(str(entry), arcname=str(entry.relative_to(agent_dir)))
+        bundle = buf.getvalue()
+
+    resp = client.post(
+        "/v1/sessions",
+        data={"metadata": _json.dumps({})},
+        files={"bundle": ("agent.tar.gz", bundle, "application/gzip")},
+        headers={"Origin": OMNIGENT_INTERNAL_WS_ORIGIN},
+    )
+    if resp.status_code not in (200, 201, 409):
+        raise RuntimeError(
+            f"dir-agent register failed: {resp.status_code} {resp.text[:500]}"
+        )
+    return name
+
+
 def build_agent_bundle(
     agent_dir: Path,
     *,
