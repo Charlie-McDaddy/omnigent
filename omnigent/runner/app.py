@@ -8241,10 +8241,11 @@ def create_runner_app(
             while _ingest_now_serving.get(session_id, 0) != _seq:
                 await _cond.wait()
         try:
-            existing = _active_turns.get(session_id)
-            if isinstance(existing, asyncio.Task) and not existing.done():
-                # A concurrent path already started a turn; it re-enters here on
-                # completion to drain the buffer.
+            if session_id in _active_turns:
+                # Concurrent path already started a turn — key membership (None
+                # sentinel or Task) per the runner-wide convention, so a
+                # streaming start (slot stays None) is also detected. That turn
+                # re-enters here on completion to drain the buffer.
                 return
 
             buf = _session_message_buffers.get(session_id)
@@ -9435,7 +9436,10 @@ def create_runner_app(
                 pass
         except asyncio.CancelledError:
             # Publish terminal status so the client doesn't sit on stale "running".
+            # This teardown bypasses _on_proxy_stream_end, so clear the live
+            # marker here too or the next turn's forward gate goes stale.
             _active_turns.pop(session_id, None)
+            _live_response_id.pop(session_id, None)
             _publish_turn_status(session_id, "idle")
             raise
         except _ContextWindowOverflow:
