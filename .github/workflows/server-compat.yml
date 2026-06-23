@@ -14,7 +14,7 @@ name: Backwards-Compat
 #
 # The test runs are the SAME composite actions the normal gates use
 # (.github/actions/e2e-run, integration-run); a cell differs only in which
-# subprocess(es) are the old build. See docs/SERVER_VERSION_COMPAT_CI.md.
+# subprocess(es) are the old build.
 #
 # Triggers:
 #   workflow_dispatch   manual; optional `versions` CSV overrides the set.
@@ -94,6 +94,10 @@ jobs:
           # breaks because '' is falsy and falls through to x).
           server_version: ${{ matrix.server != 'main' && matrix.server || '' }}
           runner_version: ${{ matrix.runner != 'main' && matrix.runner || '' }}
+          # Unique per cell so upload-artifact@v4 doesn't collide across the
+          # matrix (every integration cell shares the harness; e2e cells share
+          # a shard_id).
+          artifact_suffix: "-s${{ matrix.server }}-r${{ matrix.runner }}"
           shard_id: ${{ matrix.shard_id }}
           num_shards: ${{ matrix.num_shards }}
           parallelism: "2"
@@ -121,6 +125,10 @@ jobs:
         with:
           server_version: ${{ matrix.server != 'main' && matrix.server || '' }}
           runner_version: ${{ matrix.runner != 'main' && matrix.runner || '' }}
+          # Unique per cell so upload-artifact@v4 doesn't collide across the
+          # matrix (every integration cell shares the harness; e2e cells share
+          # a shard_id).
+          artifact_suffix: "-s${{ matrix.server }}-r${{ matrix.runner }}"
           harness: ${{ matrix.harness }}
           model: ${{ matrix.model }}
           workers: ${{ matrix.workers }}

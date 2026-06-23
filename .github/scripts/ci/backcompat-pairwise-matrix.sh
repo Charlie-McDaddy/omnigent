@@ -13,6 +13,7 @@
 # Env in:
 #   VERSIONS    optional comma-separated override of the version set used for
 #               BOTH axes (e.g. "main,v0.2.0"). Empty = main + all non-rc tags.
+#               Blank entries are dropped and surrounding whitespace trimmed.
 #   NUM_SHARDS  e2e shard count per cell (default 4).
 # Out (GITHUB_OUTPUT):
 #   e2e_matrix={"include":[{"server":..,"runner":..,"shard_id":..,"num_shards":..}, ...]}
@@ -20,16 +21,52 @@
 
 set -euo pipefail
 
+# A version token is "main" or a release tag (vX.Y[.Z][pre/dev suffix]). Anything
+# else is rejected so it can't break the matrix JSON or reach a `git worktree add`.
+_valid_version() {
+  [ "$1" = "main" ] || [[ "$1" =~ ^v?[0-9]+\.[0-9]+(\.[0-9]+)?([a-z0-9.]*)?$ ]]
+}
+
+raw=()
 if [ -n "${VERSIONS:-}" ]; then
-  IFS=',' read -ra V <<<"$VERSIONS"
+  IFS=',' read -ra raw <<<"$VERSIONS"
 else
-  # Portable (no mapfile/bash-4): main + every non-rc release tag, newest first.
-  V=("main")
-  while IFS= read -r tag; do
-    [ -n "$tag" ] && V+=("$tag")
-  done < <(git tag --sort=-v:refname | grep -vi rc)
+  raw=("main")
+  # `[^a-z]rc[0-9]` so we drop vX.Y.ZrcN without over-excluding tags that merely
+  # contain the substring "rc" (e.g. a hypothetical "...march").
+  while IFS= read -r tag; do raw+=("$tag"); done < <(git tag --sort=-v:refname | grep -viE '(^|[^a-z])rc[0-9]')
 fi
+
+# Trim whitespace, drop blanks, reject invalid tokens.
+V=()
+for v in "${raw[@]}"; do
+  v="${v#"${v%%[![:space:]]*}"}"
+  v="${v%"${v##*[![:space:]]}"}"
+  [ -z "$v" ] && continue
+  if ! _valid_version "$v"; then
+    echo "skipping invalid version token: '$v'" >&2
+    continue
+  fi
+  V+=("$v")
+done
+
 num_shards="${NUM_SHARDS:-4}"
+
+# GitHub caps a matrix at 256 jobs. e2e jobs = (|V|² − [main present]) × shards.
+# If we'd exceed it, drop the OLDEST versions (V is newest-first in auto mode)
+# until under, logging each drop — never silently truncate.
+_pairs() {
+  local n=${#V[@]} mm=0 x
+  for x in "${V[@]}"; do [ "$x" = "main" ] && mm=1 && break; done
+  echo "$((n * n - mm))"
+}
+max_e2e=256
+while [ "${#V[@]}" -gt 2 ] && [ "$(($(_pairs) * num_shards))" -gt "$max_e2e" ]; do
+  dropped="${V[${#V[@]} - 1]}"
+  unset 'V[${#V[@]}-1]'
+  V=("${V[@]}")
+  echo "version-matrix cap: dropped oldest version '$dropped' to keep e2e jobs <= $max_e2e" >&2
+done
 
 # The integration suite runs a single openai-agents leg in mock mode (matches
 # integration-matrix.sh); the model name is unused under the mock LLM.
@@ -54,11 +91,11 @@ done
 
 e2e_json=$(
   IFS=,
-  echo "${e2e_items[*]}"
+  echo "${e2e_items[*]:-}"
 )
 integ_json=$(
   IFS=,
-  echo "${integ_items[*]}"
+  echo "${integ_items[*]:-}"
 )
 
 {
@@ -66,5 +103,5 @@ integ_json=$(
   echo "integration_matrix={\"include\":[$integ_json]}"
 } >>"${GITHUB_OUTPUT:-/dev/stdout}"
 
-echo "versions: ${V[*]}" >&2
-echo "pairs: $((${#integ_items[@]})) (excludes main/main); e2e jobs: ${#e2e_items[@]}; integration jobs: ${#integ_items[@]}" >&2
+echo "versions: ${V[*]:-(none)}" >&2
+echo "pairs: ${#integ_items[@]} (excludes main/main); e2e jobs: ${#e2e_items[@]}; integration jobs: ${#integ_items[@]}" >&2
