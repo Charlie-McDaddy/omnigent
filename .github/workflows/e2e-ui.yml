@@ -47,8 +47,10 @@ env:
   # dedicated step, so the setup.py build would be a redundant npm hit.
   OMNIGENT_SKIP_WEB_UI: "true"
   # Scrub harness credentials the test server must not pick up.
-  # OPENAI_API_KEY / OPENAI_BASE_URL are NOT scrubbed here -- the conftest's
-  # live_server fixture sets them to point at the in-process mock LLM server.
+  # OPENAI_API_KEY / OPENAI_BASE_URL are NOT scrubbed here — the
+  # conftest's live_server fixture overrides them to mock values
+  # (OPENAI_BASE_URL=<mock>/v1, OPENAI_API_KEY=mock-key) inside the
+  # spawned server subprocess, so ambient real credentials are a no-op.
   ANTHROPIC_API_KEY: ""
   DATABRICKS_TOKEN: ""
   CODEX: ""
@@ -137,7 +139,7 @@ jobs:
           key: venv-${{ runner.os }}-${{ hashFiles('.python-version') }}-${{ hashFiles('uv.lock') }}
 
       - name: Install project + dev extras
-        run: uv sync --extra all --extra dev
+        run: uv sync --locked --extra all --extra dev
 
       - name: Install bubblewrap + tmux
         # bubblewrap: the UI tests open terminals under os_env, whose
@@ -212,10 +214,15 @@ jobs:
 
       - name: Configure native-claude/codex gateway provider
         if: ${{ env.IS_NIGHTLY == 'true' }}
+        # Required only by the native render-parity tests (claude, codex), which
+        # run nightly only. The approval tests (test_exit_plan_mode,
+        # test_ask_user_question) were migrated to mock LLM (#1015) and need no
+        # gateway.
         # The native CLIs derive their gateway auth from omnigent provider
         # config. Register the Databricks gateway as the default for both
         # anthropic (Claude Code) and openai (Codex); the token reaches each
-        # CLI via an env:LLM_API_KEY ref, so no literal secret hits disk.
+        # CLI and the openai-agents harness via an env:LLM_API_KEY ref, so
+        # no literal secret hits disk.
         env:
           GATEWAY_BASE_URL: ${{ secrets.GATEWAY_BASE_URL }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
@@ -266,6 +273,11 @@ jobs:
         # --ui-skip-build: the SPA was built in the setup composite.
         # --tracing/--screenshot/--video default to off; retain-on-failure
         # keeps green runs cheap while capturing artifacts on failures.
+        # The conftest's live_server fixture points the server subprocess at the
+        # in-process mock LLM, so PR runs need no credentials. On nightly the
+        # native render-parity tests resolve api_key_ref "env:LLM_API_KEY" from
+        # the ~/.omnigent/config.yaml written above -- LLM_API_KEY is exported to
+        # $GITHUB_ENV by the nightly-gated "Set LLM credentials" step.
         env:
           SHARD_ID: ${{ matrix.shard_id }}
           NUM_SHARDS: ${{ matrix.num_shards }}
