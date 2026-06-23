@@ -406,6 +406,70 @@ def test_login_header_mode_sets_default_server(
     assert cli_mod._load_global_config().get("server") == "http://proxy.internal:6767"
 
 
+def test_login_accounts_mode_sets_default_server(
+    monkeypatch: pytest.MonkeyPatch, token_dir: Path
+) -> None:
+    """
+    A successful accounts-mode (username/password) login records the default.
+
+    Accounts mode is the common self-hosted, non-Databricks posture. The
+    default-setting lives in the login command *after* ``_accounts_login``
+    returns, so a successful sign-in repoints the default just like the
+    Databricks path. ``_accounts_login`` is stubbed to a clean return
+    (success) to isolate that wiring — its own HTTP flow is a separate
+    concern.
+    """
+    import omnigent.cli as cli_mod
+
+    fake = _FakeHttpx(responses=[_response(401, body={"login_url": "/login"})])
+    _patch_login_env(monkeypatch, fake_httpx=fake)
+    monkeypatch.setattr(cli_mod, "_accounts_login", lambda server: None)
+
+    result = CliRunner().invoke(cli_group, ["login", "http://omni.internal:6767"])
+
+    assert result.exit_code == 0, result.output
+    assert cli_mod._load_global_config().get("server") == "http://omni.internal:6767"
+
+
+def test_login_oidc_mode_sets_default_server(
+    monkeypatch: pytest.MonkeyPatch, token_dir: Path
+) -> None:
+    """
+    A successful OIDC (browser-ticket) login records the default.
+
+    OIDC is the other non-Databricks posture, and its success path is
+    inline in the login command (no helper to stub), so this drives the
+    full ticket → poll flow to prove the default is repointed there too.
+    """
+    import time
+    import webbrowser
+
+    import omnigent.cli as cli_mod
+
+    server = "http://omni-oidc.internal:6767"
+    fake = _FakeHttpx(
+        responses=[
+            # Probe: OIDC 401 (login_url present but not "/login").
+            _response(401, body={"login_url": "/auth/login"}),
+            # Poll: the browser flow completed and the ticket is fulfilled.
+            _response(200, body={"token": "jwt", "user_id": "alice", "expires_in": 3600}),
+        ]
+    )
+    _patch_login_env(monkeypatch, fake_httpx=fake)
+    monkeypatch.setattr(
+        httpx,
+        "post",
+        lambda url, **kw: _response(200, body={"ticket": "t", "login_url": "/auth/go"}),
+    )
+    monkeypatch.setattr(webbrowser, "open", lambda url: True)
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+
+    result = CliRunner().invoke(cli_group, ["login", server])
+
+    assert result.exit_code == 0, result.output
+    assert cli_mod._load_global_config().get("server") == server
+
+
 def test_login_failure_leaves_default_server_unchanged(
     monkeypatch: pytest.MonkeyPatch, token_dir: Path
 ) -> None:
