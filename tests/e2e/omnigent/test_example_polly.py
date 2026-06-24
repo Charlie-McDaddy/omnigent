@@ -21,8 +21,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
-from omnigent.spec import load
+from omnigent.errors import OmnigentError
+from omnigent.spec import load, materialize_bundle
 from omnigent.spec.types import AgentSpec
 
 # tests/e2e/omnigent/test_example_polly.py -> repo root is 3 parents up.
@@ -33,6 +35,67 @@ _POLLY_BUNDLE = Path(__file__).resolve().parents[3] / "examples" / "polly"
 def polly_spec() -> AgentSpec:
     """Load and validate the polly bundle once for the module."""
     return load(_POLLY_BUNDLE)
+
+
+def test_polly_drops_unknown_harness_subagent_on_execution_path(tmp_path: Path) -> None:
+    """A sub-agent whose harness this client can't validate is dropped, not fatal.
+
+    Reproduces matei's incident on the real bundle: a newer server bumped polly
+    to a definition with a sub-agent harness older clients didn't recognize (the
+    ``opencode`` worker / ``opencode-native`` harness), and those clients failed
+    to launch *any* polly because the unknown harness failed the whole spec's
+    validation. ``opencode-native`` is recognized now, so this injects a
+    deliberately-synthetic harness — the stand-in for "whatever the next server
+    adds that this client doesn't know yet" — referenced from the orchestrator's
+    ``tools.agents``, and asserts:
+
+    - the strict (authoring/upload) load still fails loud — unchanged behavior;
+    - the execution-path load (``prune_invalid_sub_agents=True``, used by the
+      runner's spec resolution and the server's ``AgentCache``) drops ONLY the
+      unsupported worker and keeps polly plus every real sub-agent.
+
+    What breaks if this fails: an older host/runner resolving a newer polly
+    hard-fails on first dispatch instead of launching with its supported
+    workers — the regression in omnigent-ai/omnigent#1145.
+    """
+    # The roster this client *can* run, captured from a clean load — asserting
+    # against this (not a hardcoded set) keeps the test honest as polly's
+    # sub-agents change.
+    real_sub_agents = {sa.name for sa in load(_POLLY_BUNDLE).sub_agents}
+    assert real_sub_agents, "polly should declare sub-agents"
+
+    bundle = materialize_bundle(_POLLY_BUNDLE, tmp_path / "polly")
+    worker = bundle / "agents" / "future_worker"
+    worker.mkdir(parents=True)
+    (worker / "config.yaml").write_text(
+        yaml.dump(
+            {
+                "spec_version": 1,
+                "name": "future_worker",
+                "executor": {
+                    "type": "omnigent",
+                    "config": {"harness": "harness-from-a-newer-server"},
+                },
+            }
+        )
+    )
+    cfg = yaml.safe_load((bundle / "config.yaml").read_text())
+    cfg.setdefault("tools", {}).setdefault("agents", []).append("future_worker")
+    (bundle / "config.yaml").write_text(yaml.dump(cfg))
+
+    # Strict: the whole spec still fails (matei's symptom, preserved so authors
+    # of a real bundle still see a genuine harness typo).
+    with pytest.raises(OmnigentError, match="invalid agent spec"):
+        load(bundle)
+
+    # Execution path: polly + every real worker survive; only the unknown drops.
+    spec = load(bundle, prune_invalid_sub_agents=True)
+    surviving = {sa.name for sa in spec.sub_agents}
+    assert "future_worker" not in surviving
+    assert surviving == real_sub_agents
+    # The dangling reference must be cleaned off the orchestrator too, or polly
+    # itself would fail validation on the missing-directory check.
+    assert "future_worker" not in spec.tools.agents
 
 
 def test_orchestrator_executor(polly_spec: AgentSpec) -> None:

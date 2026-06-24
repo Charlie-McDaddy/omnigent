@@ -20,8 +20,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
-from omnigent.spec import load
+from omnigent.errors import OmnigentError
+from omnigent.spec import load, materialize_bundle
 from omnigent.spec.types import AgentSpec
 
 # tests/e2e/omnigent/test_example_debby.py -> repo root is 3 parents up.
@@ -32,6 +34,56 @@ _DEBBY_BUNDLE = Path(__file__).resolve().parents[3] / "examples" / "debby"
 def debby_spec() -> AgentSpec:
     """Load and validate the debby bundle once for the module."""
     return load(_DEBBY_BUNDLE)
+
+
+def test_debby_drops_unknown_harness_head_on_execution_path(tmp_path: Path) -> None:
+    """A head whose harness this client can't validate is dropped, not fatal.
+
+    The debby counterpart of matei's incident (see ``test_example_polly.py``):
+    a newer server can ship debby with a head whose harness an older client
+    doesn't recognize, and without graceful degradation the whole debby spec
+    fails to load and *no* debby launches. This injects a deliberately-synthetic
+    harness as an extra head referenced from ``tools.agents`` and asserts:
+
+    - the strict (authoring/upload) load still fails loud — unchanged behavior;
+    - the execution-path load (``prune_invalid_sub_agents=True``, used by the
+      runner's spec resolution and the server's ``AgentCache``) drops ONLY the
+      unsupported head and keeps debby plus its real heads.
+
+    What breaks if this fails: an older host/runner resolving a newer debby
+    hard-fails instead of launching with its supported heads — the regression in
+    omnigent-ai/omnigent#1145.
+    """
+    real_heads = {sa.name for sa in load(_DEBBY_BUNDLE).sub_agents}
+    assert real_heads, "debby should declare heads"
+
+    bundle = materialize_bundle(_DEBBY_BUNDLE, tmp_path / "debby")
+    head = bundle / "agents" / "future_head"
+    head.mkdir(parents=True)
+    (head / "config.yaml").write_text(
+        yaml.dump(
+            {
+                "spec_version": 1,
+                "name": "future_head",
+                "executor": {
+                    "type": "omnigent",
+                    "config": {"harness": "harness-from-a-newer-server"},
+                },
+            }
+        )
+    )
+    cfg = yaml.safe_load((bundle / "config.yaml").read_text())
+    cfg.setdefault("tools", {}).setdefault("agents", []).append("future_head")
+    (bundle / "config.yaml").write_text(yaml.dump(cfg))
+
+    with pytest.raises(OmnigentError, match="invalid agent spec"):
+        load(bundle)
+
+    spec = load(bundle, prune_invalid_sub_agents=True)
+    surviving = {sa.name for sa in spec.sub_agents}
+    assert "future_head" not in surviving
+    assert surviving == real_heads
+    assert "future_head" not in spec.tools.agents
 
 
 def test_debby_is_two_headed_cross_vendor(debby_spec: AgentSpec) -> None:
