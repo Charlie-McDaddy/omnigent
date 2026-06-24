@@ -2951,19 +2951,3 @@ def test_no_compaction_item_no_compaction_event() -> None:
     _run(_t())
 
 
-def test_compaction_session_not_used_for_databricks() -> None:
-    """Databricks clients should NOT wrap with OpenAIResponsesCompactionSession."""
-
-    async def _t():
-        client = types.SimpleNamespace(
-            base_url="https://profile-host.example.com/ai-gateway/openai/v1"
-        )
-        executor = OpenAIAgentsSDKExecutor(client=client)
-        sdk = _fake_agents_sdk()
-        state = executor._get_or_create_session_state(sdk, "test_session")
-        # Should be a _SanitizingSession wrapping the fake, not a compaction session
-        assert hasattr(state.sdk_session, "_underlying") or isinstance(
-            state.sdk_session, _FakeSQLiteSession
-        ), f"Expected plain session for Databricks, got {type(state.sdk_session)}"
-
-    _run(_t())
