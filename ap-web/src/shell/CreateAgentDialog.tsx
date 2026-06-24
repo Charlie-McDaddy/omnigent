@@ -125,7 +125,7 @@ export function CreateAgentDialog({
   const [description, setDescription] = useState("");
   const [instructions, setInstructions] = useState("");
   const [harness, setHarness] = useState(HARNESS_OPTIONS[0].value);
-  const [model, setModel] = useState("claude-sonnet-4-20250514");
+  const [model, setModel] = useState("");
   const [mcpEntries, setMcpEntries] = useState<MCPFormEntry[]>([]);
   const [nextKey, setNextKey] = useState(0);
 
@@ -134,7 +134,7 @@ export function CreateAgentDialog({
     setDescription("");
     setInstructions("");
     setHarness(HARNESS_OPTIONS[0].value);
-    setModel("claude-sonnet-4-20250514");
+    setModel("");
     setMcpEntries([]);
     setNextKey(0);
   }
