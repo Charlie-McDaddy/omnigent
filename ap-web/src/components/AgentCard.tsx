@@ -2,6 +2,7 @@ import { BotIcon } from "lucide-react";
 import { ClaudeIcon } from "@/components/icons/ClaudeIcon";
 import { CodexIcon } from "@/components/icons/CodexIcon";
 import { CursorIcon } from "@/components/icons/CursorIcon";
+import { KimiIcon } from "@/components/icons/KimiIcon";
 import { NessieIcon } from "@/components/icons/NessieIcon";
 import { PiIcon } from "@/components/icons/PiIcon";
 import type { ComponentType, SVGProps } from "react";
@@ -28,16 +29,17 @@ function iconForAgent(agent: AvailableAgent): ComponentType<SVGProps<SVGSVGEleme
   if (nativeAgent?.iconKind === "codex") return CodexIcon;
   if (nativeAgent?.iconKind === "pi") return PiIcon;
   if (nativeAgent?.iconKind === "cursor") return CursorIcon;
+  if (nativeAgent?.iconKind === "kimi") return KimiIcon;
   // A null harness (spec couldn't load) flows through to the bot fallback.
   if (agent.harness?.includes("codex")) return CodexIcon;
   if (agent.harness?.includes("claude")) return ClaudeIcon;
   // Both the SDK "cursor" harness and "cursor-native" get the Cursor glyph.
   if (agent.harness?.includes("cursor")) return CursorIcon;
+  // Both the SDK "kimi"/"kimi-code" harness and "kimi-native" get the Kimi glyph.
+  if (agent.harness?.includes("kimi")) return KimiIcon;
   // qwen falls back to generic BotIcon for now; see docs/QWEN_FOLLOWUPS.md
   // Exact match — a substring check would false-match e.g. "openapi".
   if (agent.harness === "pi") return PiIcon;
-  // Kimi Code falls through to BotIcon for now — see docs/KIMI_FOLLOWUPS.md
-  // item 3 for the dedicated glyph follow-up.
   return BotIcon;
 }
 

@@ -18,6 +18,9 @@ HARNESS_ALIASES: dict[str, str] = {
     # User-facing spelling for Moonshot AI's Kimi Code CLI; the canonical id
     # is "kimi" (matches the binary and the registry / workflow type).
     "kimi-code": "kimi",
+    # Reversed spelling for the native Kimi Code TUI harness; canonical id is
+    # "kimi-native" (the SDK/headless harness keeps the bare "kimi" id).
+    "native-kimi": "kimi-native",
     # Qwen Code harness alias.
     "qwen-code": "qwen",
 }
@@ -38,6 +41,8 @@ NATIVE_HARNESSES: frozenset[str] = frozenset(
         "native-pi",
         "cursor-native",
         "native-cursor",
+        "kimi-native",
+        "native-kimi",
     }
 )
 

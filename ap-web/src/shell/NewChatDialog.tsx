@@ -71,7 +71,7 @@ import { AgentRowTooltip } from "@/components/AgentHoverCard";
 // returns agents newest-registered first (agent_store.list sorts by
 // created_at desc), so pin the order users expect; any agent not listed
 // here falls after, in server order.
-const AGENT_DISPLAY_ORDER = ["Claude Code", "Codex", "Cursor", "Pi", "Polly", "Debby"];
+const AGENT_DISPLAY_ORDER = ["Claude Code", "Codex", "Cursor", "Pi", "Kimi", "Polly", "Debby"];
 
 // Built-in agents (by name slug) — the long-lived agents the server
 // ships out of the box. The picker groups these first, then a divider,
@@ -82,13 +82,15 @@ const BUILTIN_AGENTS = new Set([
   "codex-native-ui", // Codex
   "pi-native-ui", // Pi
   "cursor-native-ui", // Cursor
+  "kimi-native-ui", // Kimi
   "polly",
   "debby",
 ]);
 
-// Hidden on the new-session picker only (superseded by polly; older
-// deployments still carry a seeded nessie row this filter keeps out).
-const NEW_SESSION_HIDDEN_AGENTS = new Set(["nessie"]);
+// Hidden from the new-session picker only. `nessie` is superseded by polly.
+// `kimi` / `kimi-code` are the headless SDK harness (kept for sub-agent / `run
+// --harness kimi` use) — the picker offers only the native TUI (`kimi-native-ui`).
+const NEW_SESSION_HIDDEN_AGENTS = new Set(["nessie", "kimi", "kimi-code"]);
 
 // Short picker-row blurbs — the spec descriptions are long paragraphs that
 // truncate badly in the dropdown; other dialogs keep the server values.

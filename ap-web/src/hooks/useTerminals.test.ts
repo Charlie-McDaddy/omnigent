@@ -483,6 +483,12 @@ describe("inventoryTerminals", () => {
     session: "main",
     running: true,
   };
+  const kimiPane: TerminalInfo = {
+    id: "terminal_kimi_main",
+    name: "kimi",
+    session: "main",
+    running: true,
+  };
   const bash: TerminalInfo = {
     id: "terminal_bash_s1",
     name: "bash",
@@ -502,6 +508,13 @@ describe("inventoryTerminals", () => {
     // same failure mode as the pi pane above — leaked into Shells and hid
     // the Chat/Terminal pill in Terminal view.
     expect(inventoryTerminals([cursorPane, bash], true)).toEqual([bash]);
+  });
+
+  it("drops the kimi vendor pane for native Kimi sessions", () => {
+    // Regression: terminal_kimi_main was missing from AGENT_TERMINAL_IDS,
+    // same failure mode as the pi/cursor panes above — leaked into Shells
+    // and hid the Chat/Terminal pill in Terminal view.
+    expect(inventoryTerminals([kimiPane, bash], true)).toEqual([bash]);
   });
 
   it("drops the embedded REPL terminal for terminal-first SDK sessions", () => {

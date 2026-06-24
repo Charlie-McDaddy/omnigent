@@ -74,6 +74,12 @@ _HARNESS_MODULES: dict[str, str] = {
     # back — a native-CLI harness like claude/codex/pi-native, so it IS in
     # ``NATIVE_HARNESSES``. See omnigent/inner/cursor_native_harness.py.
     "cursor-native": "omnigent.inner.cursor_native_harness",
+    # Native Kimi Code TUI bridge used by ``omnigent kimi``. Drives the resident
+    # ``kimi`` TUI by injecting each web-UI turn into its tmux pane (tmux paste)
+    # — a native-CLI harness like claude/codex/cursor-native, so it IS in
+    # ``NATIVE_HARNESSES``. Distinct from the headless ``kimi`` SDK harness
+    # above. See omnigent/inner/kimi_native_harness.py.
+    "kimi-native": "omnigent.inner.kimi_native_harness",
     # Google Antigravity SDK harness wrap. See
     # omnigent/inner/antigravity_harness.py. In-process SDK harness
     # (``google-antigravity``), like openai-agents — Omnigent spawns no CLI

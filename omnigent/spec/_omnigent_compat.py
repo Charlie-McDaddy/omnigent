@@ -83,6 +83,7 @@ OMNIGENT_HARNESSES = frozenset(
         "cursor",
         "databricks_supervisor",
         "kimi",
+        "kimi-native",
         "cursor-native",
         "openai-agents",
         "open-responses",
@@ -93,7 +94,16 @@ OMNIGENT_HARNESSES = frozenset(
 )
 # User-facing aliases accepted in specs and normalized before runtime dispatch.
 OMNIGENT_HARNESS_ALIASES = frozenset(
-    {"claude", "native-pi", "openai-agents-sdk", "agy", "google-antigravity", "kimi-code", "qwen-code"}
+    {
+        "claude",
+        "native-pi",
+        "openai-agents-sdk",
+        "agy",
+        "google-antigravity",
+        "kimi-code",
+        "native-kimi",
+        "qwen-code",
+    }
 )
 _OMNIGENT_ACCEPTED_HARNESSES = OMNIGENT_HARNESSES | OMNIGENT_HARNESS_ALIASES
 

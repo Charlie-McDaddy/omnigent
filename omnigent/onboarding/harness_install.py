@@ -189,6 +189,9 @@ _HARNESS_NAME_TO_KEY: dict[str, str] = {
     KIMI_KEY: KIMI_KEY,
     "cursor-native": CURSOR_KEY,
     "native-cursor": CURSOR_KEY,
+    # Native Kimi TUI harness — same binary gate as the bare ``kimi`` surface.
+    "kimi-native": KIMI_KEY,
+    "native-kimi": KIMI_KEY,
     QWEN_KEY: QWEN_KEY,
     "qwen-code": QWEN_KEY,
 }
