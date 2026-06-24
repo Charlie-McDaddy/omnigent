@@ -11295,18 +11295,20 @@ def create_runner_app(
             return Response(status_code=204)
 
         if body_type == "compact":
-            # Omnigent server forwards explicit /compact here. claude-native
-            # and codex-native inject the slash command into the tmux
-            # pane so the CLI compacts its own context, and return 200
-            # to signal the control was handled in the terminal. Other
-            # harnesses 204 no-op — their explicit compaction is an
-            # AP-side operation the server runs when the runner does
-            # not handle the control (see ``_run_compact_locked``).
+            # Omnigent server forwards explicit /compact here.
+            # Native harnesses inject /compact into the tmux pane so
+            # the CLI compacts its own context. SDK harnesses manage
+            # compaction automatically (OpenAIResponsesCompactionSession /
+            # Claude SDK PreCompact hook) — return 200 to prevent the
+            # server from falling through to the now-removed server-side
+            # compact_conversation_now() path.
             if _session_harness_name(conversation_id) == "claude-native":
                 return await _handle_claude_native_compact(conversation_id)
             if _session_harness_name(conversation_id) == "codex-native":
                 return await _handle_codex_native_compact(conversation_id)
-            return Response(status_code=204)
+            # SDK harnesses: compaction is automatic, acknowledge the
+            # control so the server doesn't attempt its own compaction.
+            return Response(status_code=200)
 
         if body_type == "cost_approval_popup":
             # Omnigent server forwards a cost-budget checkpoint here so it can

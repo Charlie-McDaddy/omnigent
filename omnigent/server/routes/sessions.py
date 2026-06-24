@@ -17024,19 +17024,10 @@ def create_sessions_router(
             )
             return {"queued": False, "elicitation_id": elicit_id}
         if body.type == _COMPACT_TYPE:
-            # Unified control dispatch (designs/CLAUDE_NATIVE.md
-            # "Control events dispatch on the runner"): forward /compact
-            # to the bound runner first, regardless of harness. The
-            # runner dispatches by harness — claude-native injects
-            # /compact into the tmux pane so Claude Code compacts its
-            # own context and returns 200; other harnesses 204 no-op.
-            # The Omnigent server stays harness-agnostic: it runs its own
-            # in-process compaction only when the runner did NOT handle
-            # the control (204 / no runner bound). A 4xx/5xx from the
-            # runner (e.g. 503 when the claude-native pane isn't
-            # attached) is surfaced as an error rather than silently
-            # falling through to AP-side compaction, which would be
-            # wrong for a terminal-owned session.
+            # Forward /compact to the runner. The runner dispatches by
+            # harness: native harnesses inject the slash command into the
+            # tmux pane; SDK harnesses acknowledge the control (compaction
+            # is automatic). All harnesses return 200.
             runner_result = await _forward_session_change_to_runner(
                 session_id,
                 runner_router,
@@ -17044,17 +17035,12 @@ def create_sessions_router(
             )
             if runner_result is not None and runner_result.status_code == 200:
                 return {"queued": False}
-            if runner_result is not None and runner_result.status_code != 204:
+            if runner_result is not None and runner_result.status_code >= 400:
                 raise OmnigentError(
                     f"Compaction failed: runner returned {runner_result.status_code}",
                     code=ErrorCode.INTERNAL_ERROR,
                 )
-            await _run_compact_locked(
-                session_id,
-                conv,
-                agent_store,
-                agent_cache,
-            )
+            # No runner bound — nothing to compact.
             return {"queued": False}
         if body.type == "compaction":
             import uuid as _uuid
