@@ -910,15 +910,6 @@ def live_server(
     # match a content-based queue gets a generic reply (sufficient for tests
     # that only assert an assistant bubble appears, not its exact content).
     set_fallback_mock_llm(mock_url, "gpt-4o-mini", "Mock LLM response.")
-    # Fallbacks for native CLI models — native CLIs may use different model
-    # names than the provider config's models.default (e.g. codex 0.139
-    # uses gpt-4o from config, codex 0.140 uses its built-in gpt-5.5).
-    # Cover all known model names so any version gets a benign response.
-    set_fallback_mock_llm(mock_url, "gpt-4o", "Mock LLM response.")
-    set_fallback_mock_llm(mock_url, "gpt-5.5", "Mock LLM response.")
-    set_fallback_mock_llm(mock_url, _CLAUDE_MOCK_MODEL, "Mock LLM response.")
-    # Catch-all: any model not covered above still gets a response.
-    set_fallback_mock_llm(mock_url, "default", "Mock LLM response.")
 
     try:
         yield base_url
