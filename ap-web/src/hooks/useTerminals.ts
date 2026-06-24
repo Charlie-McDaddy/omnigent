@@ -68,6 +68,7 @@ export const AGENT_TERMINAL_IDS: ReadonlySet<string> = new Set([
   "terminal_cursor_main",
   "terminal_goose_main",
   "terminal_qwen_main",
+  "terminal_hermes_main",
 ]);
 
 /**

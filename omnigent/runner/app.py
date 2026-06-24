@@ -1771,10 +1771,13 @@ async def _auto_create_hermes_terminal(
             os_env=OSEnvSpec(type="caller_process", cwd=workspace),
             command=hermes_command,
             args=hermes_args,
-            # NO_COLOR keeps the prompt_toolkit pane cheap to scrape (8-color/plain
-            # is far easier to strip than truecolor). Hermes' provider/model come
-            # from the user's own `hermes setup` / `hermes model` config.
-            env={"NO_COLOR": "1"},
+            # No color-disabling env: Hermes' themed TUI (its gold prompt) is the
+            # point of the native view, and the bridge captures the pane with
+            # ``tmux capture-pane -p`` (ANSI stripped) for readiness detection
+            # while the forwarder reads the SQLite transcript — so colour never
+            # interferes. (An earlier NO_COLOR=1 here rendered the TUI white.)
+            # Hermes' provider/model come from the user's own `hermes setup`.
+            env={},
             scrollback=100_000,
             tmux_allow_passthrough=True,
             tmux_start_on_attach=False,
