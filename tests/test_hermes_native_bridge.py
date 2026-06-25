@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -138,3 +140,104 @@ def test_send_pane_keys_raises_without_target(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(b, "read_tmux_info", lambda _d: None)
     with pytest.raises(RuntimeError, match="not advertised"):
         b.send_hermes_pane_keys(tmp_path, "1")
+
+
+# -- Policy hook config tests --
+
+
+def test_write_policy_hook_config_creates_expected_files(tmp_path) -> None:
+    bridge_dir = tmp_path / "bridge"
+    bridge_dir.mkdir()
+
+    hermes_home = b.write_policy_hook_config(
+        bridge_dir, "http://localhost:6767", "session-123"
+    )
+
+    assert hermes_home == bridge_dir / "hermes_home"
+    assert hermes_home.is_dir()
+
+    # Wrapper shell script exists and is executable.
+    wrapper = hermes_home / "omnigent-policy-hook.sh"
+    assert wrapper.is_file()
+    assert wrapper.stat().st_mode & 0o111
+    wrapper_text = wrapper.read_text()
+    assert "_OMNIGENT_SERVER_URL='http://localhost:6767'" in wrapper_text
+    assert "_OMNIGENT_SESSION_ID='session-123'" in wrapper_text
+    assert sys.executable in wrapper_text
+    assert "hermes_policy_hook.py" in wrapper_text
+
+    # config.yaml with hook registered.
+    config = json.loads((hermes_home / "config.yaml").read_text())
+    assert config["hooks_auto_accept"] is True
+    hooks = config["hooks"]["pre_tool_call"]
+    assert len(hooks) == 1
+    assert hooks[0]["command"] == str(wrapper)
+    assert hooks[0]["timeout"] == 86400
+
+    # Allowlist.
+    allowlist = json.loads((hermes_home / "shell-hooks-allowlist.json").read_text())
+    assert allowlist["approvals"][0]["event"] == "pre_tool_call"
+    assert allowlist["approvals"][0]["command"] == str(wrapper)
+
+
+def test_write_policy_hook_config_copies_user_files(tmp_path, monkeypatch) -> None:
+    bridge_dir = tmp_path / "bridge"
+    bridge_dir.mkdir()
+    user_hermes = tmp_path / ".hermes"
+    user_hermes.mkdir()
+    (user_hermes / ".env").write_text("API_KEY=secret")
+    (user_hermes / "auth.json").write_text('{"token": "abc"}')
+
+    monkeypatch.setattr(b.Path, "home", staticmethod(lambda: tmp_path))
+
+    hermes_home = b.write_policy_hook_config(bridge_dir, "http://localhost:6767", "s1")
+    assert (hermes_home / ".env").read_text() == "API_KEY=secret"
+    assert (hermes_home / "auth.json").read_text() == '{"token": "abc"}'
+
+
+def test_write_policy_hook_config_merges_user_model(tmp_path, monkeypatch) -> None:
+    bridge_dir = tmp_path / "bridge"
+    bridge_dir.mkdir()
+    user_hermes = tmp_path / ".hermes"
+    user_hermes.mkdir()
+
+    import yaml
+
+    (user_hermes / "config.yaml").write_text(
+        yaml.dump({"model": "claude-sonnet-4-20250514", "providers": {"anthropic": {}}})
+    )
+
+    monkeypatch.setattr(b.Path, "home", staticmethod(lambda: tmp_path))
+
+    hermes_home = b.write_policy_hook_config(bridge_dir, "http://localhost:6767", "s2")
+    config = json.loads((hermes_home / "config.yaml").read_text())
+    assert config["model"] == "claude-sonnet-4-20250514"
+    assert config["providers"] == {"anthropic": {}}
+    assert config["hooks_auto_accept"] is True
+
+
+def test_read_hermes_home_returns_path_when_exists(tmp_path) -> None:
+    (tmp_path / "hermes_home").mkdir()
+    assert b.read_hermes_home(tmp_path) == tmp_path / "hermes_home"
+
+
+def test_read_hermes_home_returns_none_when_missing(tmp_path) -> None:
+    assert b.read_hermes_home(tmp_path) is None
+
+
+def test_build_spawn_env_includes_hermes_home_when_policy_written(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(b, "_BRIDGE_ROOT", tmp_path / "hermes-native")
+    bridge_dir = b.bridge_dir_for_session_id("test-session")
+    bridge_dir.mkdir(parents=True, exist_ok=True)
+    b.write_policy_hook_config(bridge_dir, "http://localhost:6767", "test-session")
+
+    env = b.build_hermes_native_spawn_env("test-session")
+    assert env["HERMES_HOME"] == str(bridge_dir / "hermes_home")
+
+
+def test_build_spawn_env_no_hermes_home_without_policy(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(b, "_BRIDGE_ROOT", tmp_path / "hermes-native")
+    env = b.build_hermes_native_spawn_env("test-no-policy")
+    assert "HERMES_HOME" not in env

@@ -223,3 +223,64 @@ async def test_forward_loop_discovers_and_mirrors_new_messages(tmp_path, monkeyp
     assert roles == ["user", "assistant"]
     # High-water cursor persisted so a restart resumes without re-posting.
     assert f._read_state(tmp_path).hermes_session_id == "20260620_1"
+
+
+# --- Usage tracker tests ---------------------------------------------------
+
+
+async def test_usage_tracker_posts_model_on_first_flush(tmp_path, monkeypatch) -> None:
+    """The tracker reads the model from the bridge config and posts it."""
+    # Write a per-session config with a model.
+    hermes_home = tmp_path / "hermes_home"
+    hermes_home.mkdir()
+    import yaml
+
+    (hermes_home / "config.yaml").write_text(yaml.dump({"model": "claude-sonnet-4-20250514"}))
+
+    client = _FakeClient()
+    tracker = f._HermesUsageTracker(client, "conv_usage", tmp_path)
+    await tracker.flush()
+
+    assert len(client.posts) == 1
+    url, body = client.posts[0]
+    assert url == "/v1/sessions/conv_usage/events"
+    assert body["type"] == "external_session_usage"
+    assert body["data"]["model"] == "claude-sonnet-4-20250514"
+
+
+async def test_usage_tracker_deduplicates(tmp_path, monkeypatch) -> None:
+    """Consecutive flushes with the same model do not re-post."""
+    hermes_home = tmp_path / "hermes_home"
+    hermes_home.mkdir()
+    import yaml
+
+    (hermes_home / "config.yaml").write_text(yaml.dump({"model": "gpt-4o"}))
+
+    client = _FakeClient()
+    tracker = f._HermesUsageTracker(client, "conv_dedup", tmp_path)
+    await tracker.flush()
+    await tracker.flush()
+    await tracker.flush()
+
+    assert len(client.posts) == 1  # only the first flush posts
+
+
+async def test_usage_tracker_no_post_when_no_model(tmp_path) -> None:
+    """No config / no model -> nothing posted."""
+    client = _FakeClient()
+    tracker = f._HermesUsageTracker(client, "conv_none", tmp_path)
+    await tracker.flush()
+    assert len(client.posts) == 0
+
+
+async def test_read_model_from_hermes_config_fallback(tmp_path, monkeypatch) -> None:
+    """Falls back to ~/.hermes/config.yaml when no per-session config exists."""
+    user_hermes = tmp_path / ".hermes"
+    user_hermes.mkdir()
+    import yaml
+
+    (user_hermes / "config.yaml").write_text(yaml.dump({"model": "from-user-config"}))
+    monkeypatch.setattr(f.Path, "home", staticmethod(lambda: tmp_path))
+
+    model = f._read_model_from_hermes_config(tmp_path / "nonexistent")
+    assert model == "from-user-config"
