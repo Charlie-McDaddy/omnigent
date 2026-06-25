@@ -105,6 +105,113 @@ _UNBOUND_RUNNER_MESSAGE_FRAGMENT = "not bound to a runner"
 # hex + hyphens keeps it safe to interpolate into a rollout filename and a
 # ``codex resume`` argument (no path separators / traversal).
 _CODEX_THREAD_ID_RE = re.compile(r"^[0-9a-fA-F-]+$")
+_CODEX_AUTH_UNAVAILABLE_BINARY_MISSING = "binary-missing"
+_CODEX_AUTH_UNAVAILABLE_NEEDS_AUTH = "needs-auth"
+
+
+@dataclass(frozen=True)
+class _CodexAuthSource:
+    """Resolved source for Codex authentication material."""
+
+    auth_path: Path
+
+
+def _resolve_codex_auth_source() -> _CodexAuthSource:
+    """
+    Resolve the local Codex auth source used for availability checks.
+
+    This is the seam for future managed credentials: once Omnigent can provide
+    centrally managed Codex credentials, this resolver can return that source
+    instead. For now it deliberately defaults to Codex's local ``auth.json`` via
+    the same ``CODEX_HOME`` source resolver used when launching native Codex, so
+    inherited private Omnigent homes map back to the user's real Codex home.
+
+    :returns: Local Codex auth source to inspect synchronously.
+    """
+    from omnigent.inner.codex_executor import _codex_home_config_source_from_env
+
+    return _CodexAuthSource(auth_path=_codex_home_config_source_from_env() / "auth.json")
+
+
+def _codex_expiry_timestamp(value: object) -> float | None:
+    """Parse a Codex auth expiry value into epoch seconds, when possible."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        # Codex-adjacent auth files commonly use either seconds or millis.
+        return float(value) / 1000 if value > 10_000_000_000 else float(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        with contextlib.suppress(ValueError):
+            numeric = float(stripped)
+            return numeric / 1000 if numeric > 10_000_000_000 else numeric
+        with contextlib.suppress(ValueError):
+            return datetime.fromisoformat(stripped.replace("Z", "+00:00")).timestamp()
+    return None
+
+
+def _codex_auth_json_has_available_credential(auth_path: Path) -> bool:
+    """Return whether ``auth.json`` parses and carries an unexpired credential."""
+    try:
+        raw = auth_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(data, dict):
+        return False
+
+    credential_containers = [data]
+    tokens = data.get("tokens")
+    if isinstance(tokens, dict):
+        credential_containers.append(tokens)
+
+    expiry_keys = ("expires_at", "expiresAt", "expiry", "expires_on", "expiration")
+    now = time.time()
+    for container in credential_containers:
+        for key in expiry_keys:
+            if key not in container:
+                continue
+            timestamp = _codex_expiry_timestamp(container[key])
+            if timestamp is None or timestamp <= now:
+                return False
+
+    api_key = data.get("OPENAI_API_KEY")
+    if isinstance(api_key, str) and api_key.strip():
+        return True
+    personal_access_token = data.get("personal_access_token")
+    if isinstance(personal_access_token, str) and personal_access_token.strip():
+        return True
+    if isinstance(tokens, dict):
+        for field in ("access_token", "refresh_token"):
+            value = tokens.get(field)
+            if isinstance(value, str) and value.strip():
+                return True
+    return False
+
+
+def _codex_auth_unavailable_reason() -> str | None:
+    """
+    Return why local Codex is unavailable, or ``None`` when available.
+
+    The check is synchronous, side-effect free, and local-only: it only checks
+    the ``codex`` binary and the resolved local auth source. It never runs
+    ``codex login``, shells out to a status command, or performs a network probe.
+
+    :returns: ``"binary-missing"`` when the CLI is absent, ``"needs-auth"``
+        when the CLI exists but ``auth.json`` is missing, malformed, empty, or
+        expired, and ``None`` when a usable unexpired credential is present.
+    """
+    if shutil.which(_DEFAULT_CODEX_COMMAND) is None:
+        return _CODEX_AUTH_UNAVAILABLE_BINARY_MISSING
+    source = _resolve_codex_auth_source()
+    if not _codex_auth_json_has_available_credential(source.auth_path):
+        return _CODEX_AUTH_UNAVAILABLE_NEEDS_AUTH
+    return None
 
 
 def _update_startup_progress(

@@ -28,6 +28,88 @@ from omnigent.codex_native_elicitation import codex_elicitation_id
 from omnigent.spec import load
 
 
+def _write_codex_auth(path: Path, payload: object) -> None:
+    """Write a test Codex auth.json payload."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _point_codex_auth_check_at(
+    monkeypatch: pytest.MonkeyPatch, auth_path: Path, *, binary_present: bool
+) -> None:
+    """Redirect Codex availability checks away from the real machine state."""
+    monkeypatch.setattr(
+        codex_native,
+        "_resolve_codex_auth_source",
+        lambda: codex_native._CodexAuthSource(auth_path=auth_path),
+    )
+    monkeypatch.setattr(
+        codex_native.shutil,
+        "which",
+        lambda name: f"/tmp/{name}" if binary_present else None,
+    )
+
+
+def test_codex_auth_unavailable_reason_binary_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Missing codex binary reports binary-missing before reading auth.json."""
+    auth_path = tmp_path / "codex-home" / "auth.json"
+    _point_codex_auth_check_at(monkeypatch, auth_path, binary_present=False)
+
+    assert codex_native._codex_auth_unavailable_reason() == "binary-missing"
+
+
+def test_codex_auth_unavailable_reason_absent_auth_json_needs_auth(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Installed codex without auth.json reports needs-auth."""
+    auth_path = tmp_path / "codex-home" / "auth.json"
+    _point_codex_auth_check_at(monkeypatch, auth_path, binary_present=True)
+
+    assert codex_native._codex_auth_unavailable_reason() == "needs-auth"
+
+
+def test_codex_auth_unavailable_reason_valid_unexpired_auth_available(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Installed codex with unexpired auth.json is available."""
+    auth_path = tmp_path / "codex-home" / "auth.json"
+    _point_codex_auth_check_at(monkeypatch, auth_path, binary_present=True)
+    _write_codex_auth(
+        auth_path,
+        {"tokens": {"access_token": "tok", "expires_at": codex_native.time.time() + 3600}},
+    )
+
+    assert codex_native._codex_auth_unavailable_reason() is None
+
+
+def test_codex_auth_unavailable_reason_expired_auth_needs_auth(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Installed codex with expired auth.json reports needs-auth."""
+    auth_path = tmp_path / "codex-home" / "auth.json"
+    _point_codex_auth_check_at(monkeypatch, auth_path, binary_present=True)
+    _write_codex_auth(
+        auth_path,
+        {"tokens": {"access_token": "tok", "expires_at": codex_native.time.time() - 1}},
+    )
+
+    assert codex_native._codex_auth_unavailable_reason() == "needs-auth"
+
+
+def test_codex_auth_unavailable_reason_malformed_auth_needs_auth(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Installed codex with malformed auth.json reports needs-auth."""
+    auth_path = tmp_path / "codex-home" / "auth.json"
+    _point_codex_auth_check_at(monkeypatch, auth_path, binary_present=True)
+    auth_path.parent.mkdir(parents=True, exist_ok=True)
+    auth_path.write_text("{not json", encoding="utf-8")
+
+    assert codex_native._codex_auth_unavailable_reason() == "needs-auth"
+
+
 class _FakeTerminalClient:
     """
     Minimal async client for terminal-launch helper tests.

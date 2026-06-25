@@ -8,6 +8,7 @@ import {
   deriveHomeDir,
   deriveRepoName,
   describeCreateError,
+  harnessUnavailableReasonOnHost,
   harnessUnconfiguredOnHost,
   isValidSandboxRepoUrl,
   isValidWorkspace,
@@ -375,7 +376,7 @@ describe("describeCreateError", () => {
 });
 
 describe("harnessUnconfiguredOnHost", () => {
-  const hostWith = (configured: Record<string, boolean> | null | undefined): Host =>
+  const hostWith = (configured: Record<string, boolean | string> | null | undefined): Host =>
     ({
       host_id: "host_1",
       name: "laptop",
@@ -385,10 +386,17 @@ describe("harnessUnconfiguredOnHost", () => {
     }) as Host;
 
   it("warns only on an explicit false from the host", () => {
-    const host = hostWith({ "claude-sdk": true, codex: false });
+    const testHost = hostWith({ "claude-sdk": true, codex: false });
     // Explicit false → warn; explicit true → no warning.
-    expect(harnessUnconfiguredOnHost("codex", host)).toBe(true);
-    expect(harnessUnconfiguredOnHost("claude-sdk", host)).toBe(false);
+    expect(harnessUnconfiguredOnHost("codex", testHost)).toBe(true);
+    expect(harnessUnconfiguredOnHost("claude-sdk", testHost)).toBe(false);
+  });
+
+  it("surfaces structured codex unavailable reasons", () => {
+    const testHost = hostWith({ codex: "needs-auth", "codex-native": "binary-missing" });
+    expect(harnessUnconfiguredOnHost("codex", testHost)).toBe(true);
+    expect(harnessUnavailableReasonOnHost("codex", testHost)).toBe("needs-auth");
+    expect(harnessUnavailableReasonOnHost("codex-native", testHost)).toBe("binary-missing");
   });
 
   it("never warns when readiness is unknown", () => {
