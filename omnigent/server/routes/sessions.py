@@ -8016,10 +8016,11 @@ async def _forward_event_to_runner(
         body.model_override if body.model_override is not None else conv.model_override
     )
     # ── Server-side intelligent routing ──────────────────────────────
-    # When the session toggle is ON and no explicit model override is
-    # set, call the lightweight judge LLM to pick the best model for
-    # this turn.  The verdict is applied as model_override so the
-    # runner sees a concrete model — no per-agent config needed.
+    # When the session toggle is ON and no model has been chosen yet,
+    # call the judge LLM on the FIRST message to pick the model for
+    # the entire session.  The verdict is persisted as model_override
+    # on the conversation so subsequent turns reuse it without another
+    # judge call.
     if (
         effective_runner_override is None
         and conv.cost_control_mode_override == "on"
@@ -8033,6 +8034,21 @@ async def _forward_event_to_runner(
             _routed_model, _verdict = await route_turn(_harness, _user_text)
             if _routed_model is not None:
                 effective_runner_override = _routed_model
+                # Persist as the session's model_override so all
+                # subsequent turns use this model automatically.
+                try:
+                    await asyncio.to_thread(
+                        conversation_store.update_conversation,
+                        session_id,
+                        model_override=_routed_model,
+                    )
+                except (OSError, ValueError):
+                    _logger.warning(
+                        "smart_routing: failed to persist model_override "
+                        "for session=%s; turn still uses routed model",
+                        session_id,
+                        exc_info=True,
+                    )
                 # Emit the routing_decision transcript chip so the UI
                 # shows which model was picked, before the turn output.
                 await _emit_server_routing_decision(
