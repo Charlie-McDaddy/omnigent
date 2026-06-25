@@ -42,9 +42,9 @@ TIER_TEMPLATES: dict[str, dict[str, list[str]]] = {
         "expensive": ["databricks-claude-opus-4-8"],
     },
     "gpt": {
-        "cheap": ["databricks-gpt-4o-mini"],
-        "medium": ["databricks-gpt-4o"],
-        "expensive": ["databricks-gpt-5-4"],
+        "cheap": ["databricks-gpt-5-4-mini"],
+        "medium": ["databricks-gpt-5-4"],
+        "expensive": ["databricks-gpt-5-5"],
     },
 }
 
