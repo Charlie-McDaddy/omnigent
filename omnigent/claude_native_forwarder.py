@@ -1880,9 +1880,8 @@ async def _maybe_rotate_session_on_clear(
     except Exception:
         _logger.exception(
             "Claude /clear rotation failed; consuming the clear hook to avoid a "
-            "re-rotation loop. old_session=%s bridge_dir=%s",
+            "re-rotation loop. old_session=%s",
             session_id,
-            bridge_dir,
         )
     await _write_hook_state_async(bridge_dir, durable)
     reset_transcript_forward_state(bridge_dir, reset_hooks=False)
@@ -2067,9 +2066,8 @@ async def _maybe_rotate_session_on_fork(
     except Exception:
         _logger.exception(
             "Claude /fork rotation failed; consuming the fork hook to avoid a "
-            "re-rotation loop. old_session=%s bridge_dir=%s",
+            "re-rotation loop. old_session=%s",
             session_id,
-            bridge_dir,
         )
     await _write_hook_state_async(bridge_dir, durable)
     await _seed_fork_transcript_forward_state(
