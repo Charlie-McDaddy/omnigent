@@ -2650,6 +2650,12 @@ async def _maybe_handle_turn_event(
         await _post_compaction_status(
             client, session_id, "completed", forwarder_state=forwarder_state
         )
+        try:
+            await _persist_codex_compaction_item(client, session_id=session_id)
+        except Exception:  # noqa: BLE001
+            _logger.warning(
+                "Failed to persist codex compaction item for %s", session_id, exc_info=True
+            )
         return True
     return False
 
@@ -3630,6 +3636,12 @@ async def _handle_completed_item(
         await _post_compaction_status(
             client, session_id, "completed", forwarder_state=forwarder_state
         )
+        try:
+            await _persist_codex_compaction_item(client, session_id=session_id)
+        except Exception:  # noqa: BLE001
+            _logger.warning(
+                "Failed to persist codex compaction item for %s", session_id, exc_info=True
+            )
         return
     if not _claim_completed_item(params, item, forwarder_state):
         return
@@ -5000,6 +5012,35 @@ async def _post_compaction_status(
     _log_failed_session_event_post(_EXTERNAL_COMPACTION_STATUS_TYPE, response)
     if forwarder_state is not None and response is not None and response.status_code < 400:
         forwarder_state.compaction_status_posted = status
+
+
+async def _persist_codex_compaction_item(
+    client: httpx.AsyncClient,
+    *,
+    session_id: str,
+) -> None:
+    """Persist a compaction boundary item to the conversation store."""
+    resp = await client.get(
+        f"/v1/sessions/{session_id}/items",
+        params={"limit": 1, "order": "desc"},
+    )
+    resp.raise_for_status()
+    items = resp.json().get("data", [])
+    last_item_id = items[0]["id"] if items else f"compact_boundary_{session_id}"
+
+    resp = await client.post(
+        f"/v1/sessions/{session_id}/events",
+        json={
+            "type": "compaction",
+            "data": {
+                "summary": "[Codex compaction — context was compacted in the terminal]",
+                "last_item_id": last_item_id,
+                "model": "unknown",
+                "token_count": 0,
+            },
+        },
+    )
+    resp.raise_for_status()
 
 
 async def _handle_reasoning_delta(
