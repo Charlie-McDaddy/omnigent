@@ -40,6 +40,11 @@ on:
         description: "PR number to classify/draft (manual test)."
         required: true
         type: string
+  # TEMP(test): push trigger to exercise the real pipeline end-to-end pre-merge
+  # (workflow_dispatch/pull_request_target only run the default-branch version).
+  # REVERT before merge — see TEST_PR below and the push branch in Plan.
+  push:
+    branches: [doc-changelog-and-update]
 
 permissions:
   contents: read
@@ -52,6 +57,7 @@ concurrency:
 
 env:
   CODE_REPO: omnigent-ai/omnigent
+  TEST_PR: "1204"  # TEMP(test): target PR for the push-trigger e2e test. REVERT.
   SITE_REPO_SLUG: ${{ github.repository_owner }}/omnigent-site
   OMNIGENT_SKIP_WEB_UI: "true"
   UV_INDEX_URL: https://pypi.org/simple
@@ -63,6 +69,7 @@ jobs:
     # Cheap pre-gate; the `plan` step refines (e.g. a no-doc-labeled merge → no-op).
     if: >-
       github.repository == 'omnigent-ai/omnigent' && (
+        github.event_name == 'push' ||
         github.event_name == 'workflow_dispatch' ||
         (
           github.event.pull_request.merged == true && (
@@ -90,8 +97,9 @@ jobs:
           classify = predraft = False
           pr = author = title = ""
 
-          if event == "workflow_dispatch":
-              pr = os.environ.get("INPUT_PR", "").strip()
+          # `push` (TEMP test) exercises the exact same path as workflow_dispatch.
+          if event in ("workflow_dispatch", "push"):
+              pr = (os.environ.get("INPUT_PR") or os.environ.get("TEST_PR") or "").strip()
               meta = json.loads(subprocess.run(
                   ["gh", "pr", "view", pr, "--repo", os.environ["CODE_REPO"],
                    "--json", "author,title"], capture_output=True, text=True).stdout or "{}")
