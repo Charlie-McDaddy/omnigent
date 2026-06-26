@@ -300,7 +300,7 @@ async def test_clear_hook_rotates_active_session_without_reprocessing(
         if request.method == "PATCH" and request.url.path == "/v1/sessions/conv_old":
             assert body == {
                 "runner_id": "",
-                "labels": {BRIDGE_ID_LABEL_KEY: "conv_old"},
+                "labels": {BRIDGE_ID_LABEL_KEY: "conv_old-cleared"},
             }
             return httpx.Response(200, json={"id": "conv_old"})
         raise AssertionError(f"unexpected request: {request.method} {request.url.path}")
@@ -357,7 +357,7 @@ async def test_clear_hook_rotates_active_session_without_reprocessing(
         (
             "PATCH",
             "/v1/sessions/conv_old",
-            {"runner_id": "", "labels": {BRIDGE_ID_LABEL_KEY: "conv_old"}},
+            {"runner_id": "", "labels": {BRIDGE_ID_LABEL_KEY: "conv_old-cleared"}},
         ),
     ]
 
@@ -426,7 +426,7 @@ async def test_clear_hook_rotation_survives_old_runner_clear_failure(
         if request.method == "PATCH" and request.url.path == "/v1/sessions/conv_old":
             assert body == {
                 "runner_id": "",
-                "labels": {BRIDGE_ID_LABEL_KEY: "conv_old"},
+                "labels": {BRIDGE_ID_LABEL_KEY: "conv_old-cleared"},
             }
             return httpx.Response(503, json={"error": {"message": "temporary failure"}})
         raise AssertionError(f"unexpected request: {request.method} {request.url.path}")

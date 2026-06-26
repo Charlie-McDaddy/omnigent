@@ -1985,15 +1985,17 @@ async def _create_clear_replacement_session(
         f"/v1/sessions/{url_component(old_session_id)}",
         json={
             "runner_id": "",
-            # Re-key the superseded session onto its OWN bridge id. The new
-            # session keeps the original bridge id (set above) and owns the
-            # live terminal/pane; without re-keying, the old session shares
-            # that bridge id, so resuming it (host wake-on-message or
-            # ``omnigent claude --resume``) would cold-start a Claude
-            # terminal into the SAME bridge dir as the live session — two
-            # forwarders mirroring one transcript, i.e. duplicated items.
-            # Pointing it at its own conversation id isolates that resume.
-            "labels": {BRIDGE_ID_LABEL_KEY: old_session_id},
+            # Re-key the superseded session onto a DISTINCT "-cleared" bridge id.
+            # The new session keeps the original bridge id (set above) and owns
+            # the live terminal/pane in D(original); the old session must NOT
+            # share that dir, or resuming it (host wake-on-message /
+            # ``omnigent claude --resume``) would put a second forwarder on the
+            # live transcript (duplicate items) and trip the executor's
+            # "no longer active after /clear" guard. ``_auto_create_claude_terminal``
+            # recognises this exact marker and cold-resumes the old session in
+            # its own isolated D("{id}-cleared"); the executor spawn_env resolves
+            # the same label, so both agree.
+            "labels": {BRIDGE_ID_LABEL_KEY: f"{old_session_id}-cleared"},
         },
     )
     if clear_resp.status_code >= 400:
