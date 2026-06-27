@@ -580,19 +580,24 @@ async def _drive_model_effort(base_url: str, session_id: str) -> None:
             )
 
             # Pick model and effort in SEPARATE submenu visits. Picking a knob
-            # keeps the menu open, but the pick re-renders the submenu, which
-            # briefly detaches the OTHER group's rows — clicking a second knob in
-            # the same visit races that re-render and flakes (the effort row stays
-            # perpetually "detached, retrying"). Closing and reopening between the
-            # two picks gives each click a stable submenu (the picks persist as
-            # screen state across reopen).
+            # COMMITS the agent, which collapses the submenu (its model / effort /
+            # permission rows unmount) while the ROOT menu stays open — so a second
+            # knob clicked in the same visit chases a row that has already detached
+            # and flakes ("detached from the DOM, retrying" until the click times
+            # out). Reopen the submenu between the two picks: the picks persist as
+            # screen state, and each click then lands in a fresh, stable submenu.
             opus = page.get_by_test_id("new-chat-landing-model-opus")
             await opus.click()
             await expect(opus).to_have_attribute("aria-checked", "true")
-            await page.keyboard.press("Escape")
-            await page.keyboard.press("Escape")
-
-            await _open_entry_config(page, "ag_claude_e2e")
+            # The model pick collapsed the submenu; wait for it to fully unmount,
+            # then reopen it. The root menu never closed (the radio's preventDefault
+            # keeps it open), so reopen via the row — re-hover + ArrowRight — rather
+            # than re-clicking the trigger (which would race the still-settling
+            # dismiss and fail to reopen).
+            row = page.get_by_test_id("new-chat-landing-agent-ag_claude_e2e")
+            await expect(page.get_by_test_id("new-chat-landing-effort-high")).to_have_count(0)
+            await row.hover()
+            await row.press("ArrowRight")
             # The model pick persisted across the reopen.
             await expect(page.get_by_test_id("new-chat-landing-model-opus")).to_have_attribute(
                 "aria-checked", "true"
