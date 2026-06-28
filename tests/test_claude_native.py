@@ -134,10 +134,13 @@ def test_claude_terminal_request_launcher_plugin_wraps(tmp_path, monkeypatch) ->
     argv.
     """
 
-    def wrap(command, args):
-        return "isaac", ["--", *args]
+    from omnigent.claude_launcher import ClaudeLauncher
 
-    entry_point = SimpleNamespace(name="isaac", load=lambda: wrap)
+    class _IsaacLauncher(ClaudeLauncher):
+        def launch(self, command, args):
+            return "isaac", ["--", *args]
+
+    entry_point = SimpleNamespace(name="isaac", load=lambda: _IsaacLauncher)
     monkeypatch.setattr(importlib.metadata, "entry_points", lambda *, group: [entry_point])
     monkeypatch.setenv("OMNIGENT_CLAUDE_LAUNCHER", "isaac")
     monkeypatch.chdir(tmp_path)
