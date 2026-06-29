@@ -1468,7 +1468,6 @@ def test_monotonic_returns_float() -> None:
     assert _monotonic() >= val
 
 
-
 @pytest.mark.asyncio
 async def test_check_pane_dead_definitive_tri_state(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1487,11 +1486,11 @@ async def test_check_pane_dead_definitive_tri_state(
     :param monkeypatch: Pytest monkeypatch fixture.
     """
 
-
     # Test 1: Definitive dead (rc=0, "1" in panes)
     async def mock_dead(*args, **kwargs):
         mock_dead.call_count += 1
         return True
+
     mock_dead.call_count = 0
 
     result = await _check_pane_dead_definitive("socket", "target")
