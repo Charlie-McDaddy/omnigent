@@ -273,7 +273,13 @@ jobs:
           APP_NAME: ${{ github.event_name == 'push' && 'omnigent-ui-preview-dev' || format('omnigent-ui-preview-pr-{0}', github.event.pull_request.number) }}
           WORKSPACE_PATH: /Users/${{ secrets.DATABRICKS_CLIENT_ID }}/apps/${{ github.event_name == 'push' && 'omnigent-ui-preview-dev' || format('omnigent-ui-preview-pr-{0}', github.event.pull_request.number) }}
         run: |
-          databricks workspace mkdirs "/Workspace$WORKSPACE_PATH" 2>/dev/null || true
+          # Wipe the workspace source dir first. import-dir --overwrite only
+          # replaces files it uploads; it does NOT prune orphans. A requirements.txt
+          # left by an earlier deploy would otherwise survive and take precedence
+          # over uv (pyproject.toml + uv.lock), forcing the pip/Python-3.11 install
+          # path that fails omnigent's requires-python >=3.12.
+          databricks workspace delete "$WORKSPACE_PATH" --recursive 2>/dev/null || true
+          databricks workspace mkdirs "$WORKSPACE_PATH" 2>/dev/null || true
           databricks workspace import-dir /tmp/app-deploy "$WORKSPACE_PATH" --overwrite
           databricks apps deploy "$APP_NAME" --source-code-path "/Workspace$WORKSPACE_PATH"
 
