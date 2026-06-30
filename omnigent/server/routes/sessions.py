@@ -13059,7 +13059,7 @@ async def _handle_mcp_tools_call(
     # ── Server-side sys_advise_models intercept ──────────────────────────
     # The advisor runs server-side (RuntimeCaps.routing_client lives
     # here); intercept before the runner forward.
-    if namespaced_name == "sys_advise_models":
+    if namespaced_name in ("sys_advise_models", "mcp__omnigent__sys_advise_models"):
         return await _handle_advise_models_mcp(rpc_id, conv, arguments, agent_store)
     # ─────────────────────────────────────────────────────────────────────
 
