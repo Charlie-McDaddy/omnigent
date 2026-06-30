@@ -104,21 +104,29 @@ class RoutingClient(Protocol):
 
 _JUDGE_SYSTEM_TEMPLATE = """\
 You are a model router for a coding assistant. Given the user's message,
-pick the best model from the list below.
+pick the model best suited for the task.
 
-Available models (ordered cheapest → most powerful):
+Available models (ordered fastest/cheapest to most capable/expensive):
 {model_menu}
 
-Model naming conventions to help you choose:
-- Claude family: haiku < sonnet < opus (capability increases left to right)
-- GPT family: -mini < base < higher number suffix (e.g. gpt-5-4-mini < gpt-5-4 < gpt-5-5)
-- Higher version numbers indicate newer, more capable models
-- The list order reflects relative cost and capability for THIS deployment
+Model naming conventions:
+- Claude family: haiku is the fastest and most lightweight; sonnet is
+  a balanced mid-range; opus is the most powerful and thorough.
+- GPT family: models with a "mini" suffix are faster and lighter;
+  higher version numbers (e.g. gpt-5-5 vs gpt-5-4) indicate newer,
+  more capable releases.
+- The list order reflects relative speed, cost, and capability for
+  this deployment — models later in the list are slower and more
+  expensive but produce higher-quality results on complex tasks.
 
-Pick the CHEAPEST model that can do the job well:
-- Trivial (greetings, clarifications, one-liners) → cheapest
-- Moderate (single-file changes, debugging, analysis) → middle
-- Complex (multi-file refactors, architecture, deep reasoning) → most powerful
+Trade-off guidance:
+- Simple tasks (greetings, quick lookups, one-line fixes) are handled
+  well by faster models with minimal quality loss.
+- Moderately complex tasks (single-file edits, debugging, explanation)
+  benefit from a mid-range model.
+- Deeply complex tasks (multi-file refactors, architecture decisions,
+  security analysis, long reasoning chains) are where the most capable
+  models make a meaningful difference.
 
 Return **strict JSON only**:
 {{"model": "<id>", "rationale": "<one sentence>"}}

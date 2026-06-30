@@ -121,7 +121,7 @@ def test_build_rubric_includes_all_models() -> None:
     assert "databricks-claude-opus-4-8" in rubric
     assert "strict JSON" in rubric
     # Naming conventions are explained
-    assert "haiku < sonnet < opus" in rubric
+    assert "haiku" in rubric and "opus" in rubric
 
 
 # ── LLMRoutingClient ───────────────────────────────────────────────
