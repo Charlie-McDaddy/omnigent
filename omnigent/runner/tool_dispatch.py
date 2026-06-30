@@ -1146,33 +1146,41 @@ async def _execute_list_models_tool(*, agent_spec: Any | None) -> str:
 async def _execute_advise_models_tool(
     args: dict[str, Any],
     *,
+    server_client: httpx.AsyncClient | None,
     conversation_id: str | None,
-    agent_spec: Any | None,
 ) -> str:
     """
     Dispatch ``sys_advise_models``: fan-out model sizing recommendations.
 
-    Calls :func:`~omnigent.runner.fanout_advisor.advise_fanout` for
-    each task in the request and returns a JSON payload with the
-    recommendations and a ``router_on`` flag.
+    Delegates to the server-side ``POST /v1/sessions/{id}/advise-models``
+    endpoint where ``RuntimeCaps.routing_client`` is available.
 
     :param args: Parsed arguments from the LLM. Expected key:
         ``tasks`` — list of ``{title, agent, task}`` dicts.
+    :param server_client: httpx client pointed at the Omnigent server.
     :param conversation_id: Parent conversation id.
-    :param agent_spec: The calling session's agent spec; used to resolve
-        sub-agent harnesses.
     :returns: JSON ``{"recommendations": [...], "router_on": bool}``.
     """
-    from omnigent.runner.fanout_advisor import advise_fanout
-    from omnigent.runtime._globals import _caps
-
+    if server_client is None or conversation_id is None:
+        return json.dumps(
+            {"error": "sys_advise_models requires server_client", "router_on": False}
+        )
     tasks = args.get("tasks")
     if not isinstance(tasks, list):
         return json.dumps({"error": "tasks must be a list", "router_on": False})
-
-    router_on = _caps.routing_client is not None
-    recommendations = await advise_fanout(tasks, agent_spec, conversation_id)
-    return json.dumps({"recommendations": recommendations, "router_on": router_on})
+    try:
+        resp = await server_client.post(
+            f"/v1/sessions/{conversation_id}/advise-models",
+            json={"tasks": tasks},
+            timeout=30.0,
+        )
+        if resp.status_code >= 400:
+            return json.dumps(
+                {"error": f"advisor returned {resp.status_code}", "router_on": False}
+            )
+        return resp.text
+    except httpx.HTTPError as exc:
+        return json.dumps({"error": str(exc), "router_on": False})
 
 
 async def _execute_subagent_tool(
@@ -4120,8 +4128,8 @@ async def execute_tool(
         elif tool_name in _ADVISE_MODELS_TOOLS:
             output = await _execute_advise_models_tool(
                 args,
+                server_client=server_client,
                 conversation_id=conversation_id,
-                agent_spec=agent_spec,
             )
         elif tool_name in _SESSION_CREATE_TOOLS:
             output = await _execute_session_create(
