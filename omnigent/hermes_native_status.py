@@ -70,8 +70,10 @@ def clear_hermes_status_state(bridge_dir: Path) -> None:
     the runner calls this when it re-creates a hermes terminal so a stale
     posted-count from a prior terminal can't make the new forwarder skip (or
     re-fire) the ``external_session_status: idle`` parent-wake edge. The
-    completed-turn count itself is derived from the per-terminal Hermes session
-    row, so only the poster state needs clearing here.
+    completed-turn count is derived per ``hermes_session_id`` (not per terminal),
+    so after an in-session compaction re-pins to a forked child the forwarder
+    rebases this posted-count to the child's current count; only the poster state
+    is persisted here, so only it needs clearing.
     """
     with contextlib.suppress(OSError):
         (bridge_dir / _STATE_FILE).unlink()

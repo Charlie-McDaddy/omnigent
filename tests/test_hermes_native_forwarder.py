@@ -472,6 +472,94 @@ async def _noop() -> None:
     return None
 
 
+async def test_forward_loop_rebases_idle_count_on_compaction_repin(tmp_path, monkeypatch) -> None:
+    """Compaction re-pin rebases the idle posted-count to the child's count.
+
+    Regression: the completed-turn count is per hermes_session_id, but the idle
+    dedup baseline (posted_count) is per bridge dir. A parent that accrued N idle
+    posts leaves posted_count=N; the child's count restarts near 0, so without a
+    rebase the guard ``completed_turns > posted_count`` stays False until the
+    child exceeds N terminal turns — suppressing the child's early idle posts and
+    hanging the orchestrator. On re-pin the baseline must drop to the child's
+    current completed-turn count so the child's next completion still wakes the
+    parent.
+    """
+    workspace = str(tmp_path)
+    db = tmp_path / "state.db"
+    con = sqlite3.connect(db)
+    con.executescript(_SCHEMA)
+    con.executemany(
+        "INSERT INTO sessions(id, source, cwd, started_at, parent_session_id) VALUES (?,?,?,?,?)",
+        [
+            ("parent_1", "cli", workspace, 1000.0, None),
+            ("child_1", "cli", workspace, 1005.0, "parent_1"),
+        ],
+    )
+    con.executemany(
+        "INSERT INTO messages(session_id, role, content, tool_calls, active, compacted) "
+        "VALUES (?,?,?,?,?,?)",
+        [
+            # Parent: two completed turns (terminal assistant rows) + a compaction.
+            ("parent_1", "assistant", "done 1", None, 1, 0),
+            ("parent_1", "assistant", "done 2", None, 1, 0),
+            ("parent_1", "assistant", "compacted summary", None, 1, 1),
+            # Child: one completed turn so far.
+            ("child_1", "user", "child hi", None, 1, 0),
+            ("child_1", "assistant", "child done", None, 1, 0),
+        ],
+    )
+    con.commit()
+    con.close()
+
+    bridge_dir = tmp_path / "bridge"
+    bridge_dir.mkdir()
+    # Pin the parent; posted_count reflects the parent's two completed turns.
+    f._write_state(bridge_dir, f._ForwardState(hermes_session_id="parent_1", last_id=3))
+    hstatus.write_posted_count(bridge_dir, 2)
+
+    async def _fake_post(_client, *, session_id, item):
+        return None
+
+    monkeypatch.setattr(f, "_post_conversation_item", _fake_post)
+    monkeypatch.setattr(f, "_persist_hermes_compaction_item", lambda *a, **k: _noop())
+
+    idle_posts: list[str] = []
+
+    async def _fake_idle(_client, *, session_id, status):
+        idle_posts.append(status)
+
+    monkeypatch.setattr(f, "_post_external_session_status", _fake_idle)
+
+    iteration = {"n": 0}
+
+    async def _sleep(_s):
+        iteration["n"] += 1
+        if iteration["n"] >= 2:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(f.asyncio, "sleep", _sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        await f.forward_hermes_store_to_session(
+            base_url="http://x",
+            headers={},
+            session_id="conv_child",
+            bridge_dir=bridge_dir,
+            agent_name="hermes-native-ui",
+            workspace=workspace,
+            launch_epoch_s=1000.0,
+            db_path=db,
+        )
+
+    # Re-pinned to the child, and the baseline dropped from the parent's 2 to the
+    # child's 1 completed turn — so the child's already-present completion is not
+    # suppressed. Without the rebase, posted_count would stay 2 and the guard
+    # (1 > 2) would suppress the child's idle.
+    assert f._read_state(bridge_dir).hermes_session_id == "child_1"
+    assert hstatus.read_posted_count(bridge_dir) == 1
+    assert idle_posts == []  # child's single completed turn == baseline, no double-post
+
+
 # --- Usage tracker tests ---------------------------------------------------
 
 

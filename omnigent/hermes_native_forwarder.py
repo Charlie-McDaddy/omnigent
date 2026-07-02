@@ -890,6 +890,21 @@ async def forward_hermes_store_to_session(
                                     last_id = 0
                                     compaction_persisted = False
                                     _external_id_synced = False
+                                    # The idle dedup baseline is per-terminal but
+                                    # the completed-turn count is per
+                                    # hermes_session_id; the child restarts its
+                                    # count near 0, so rebase the baseline to the
+                                    # child's current count. Without this the guard
+                                    # `completed_turns > posted_count` stays False
+                                    # until the child exceeds the parent's total,
+                                    # suppressing idle posts for the child's first
+                                    # turns — a worker that compacts then finishes
+                                    # would never wake its parent.
+                                    await asyncio.to_thread(
+                                        hermes_native_status.write_posted_count,
+                                        bridge_dir,
+                                        await asyncio.to_thread(_count_completed_turns, db, child),
+                                    )
                                     _write_state(
                                         bridge_dir,
                                         _ForwardState(
