@@ -2916,10 +2916,8 @@ async def _forward_available_items(
             dedupe.posted_running_response_id = current_response_id
         except httpx.HTTPError:
             _logger.warning(
-                "Failed to forward Claude turn-start running status; "
-                "session=%s bridge_dir=%s response_id=%s",
+                "Failed to forward Claude turn-start running status; session=%s response_id=%s",
                 session_id,
-                bridge_dir,
                 current_response_id,
                 exc_info=True,
             )
