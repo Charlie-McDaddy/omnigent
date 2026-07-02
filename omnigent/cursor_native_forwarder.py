@@ -1158,11 +1158,14 @@ async def forward_cursor_store_to_session(
                 # Turn over the cursor ``stop`` hook's turn-completion markers to
                 # an ``external_session_status: idle`` edge — the signal that wakes
                 # a parent orchestrator (the PTY watcher's spinner status never
-                # does). Checked every poll (independent of store binding) so a
-                # turn-end is never missed, and deduped against a persisted
-                # posted-count so a supervisor restart never re-wakes the parent
-                # for a turn it already reported. Best-effort: a failed post leaves
-                # the count unadvanced so the next poll retries.
+                # does). This block sits at the poll-loop body level, deliberately
+                # OUTSIDE the ``if store_path`` mirroring branch above: the stop
+                # hook writes turn-end markers independently of the SQLite store,
+                # so a turn-end is never missed even on a poll where the store is
+                # unbound or empty. Deduped against a persisted posted-count so a
+                # supervisor restart never re-wakes the parent for a turn it
+                # already reported. Best-effort: a failed post leaves the count
+                # unadvanced so the next poll retries.
                 total_turn_ends = await asyncio.to_thread(
                     cursor_native_status.count_turn_ends, bridge_dir
                 )
