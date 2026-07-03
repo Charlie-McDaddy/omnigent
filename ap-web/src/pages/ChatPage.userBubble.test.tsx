@@ -1,8 +1,21 @@
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Bubble } from "@/lib/renderItems";
 import { FileViewerContext } from "@/shell/FileViewerContext";
-import { BubbleView } from "./ChatPage";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { useChatStore } from "@/store/chatStore";
+import { BubbleView, QueuedMessages } from "./ChatPage";
+
+// The steer/delete buttons use the app's Tooltip, which needs a
+// TooltipProvider ancestor (the app root supplies one globally). Mirror
+// that here so bare QueuedMessages renders don't throw.
+function renderQueue() {
+  return render(
+    <TooltipProvider>
+      <QueuedMessages />
+    </TooltipProvider>,
+  );
+}
 
 // UserBubble renders its text through the same markdown renderer as the
 // assistant bubble (FilePathAwareMessageResponse → Streamdown). These tests
@@ -101,26 +114,114 @@ describe("UserBubble markdown rendering", () => {
   });
 });
 
-describe("UserBubble queued badge", () => {
-  it("shows a 'Queued' badge for a queued pending bubble", () => {
-    renderBubble(userBubble("hi there", { queued: true }));
-    const badge = screen.getByTestId("message-delivery-status");
-    expect(badge).toHaveAttribute("data-delivery-status", "queued");
-    expect(badge).toHaveTextContent("Queued");
+function heldMsg(tempId: string, text: string) {
+  return {
+    tempId,
+    content: [{ type: "input_text" as const, text }],
+    text,
+    files: [] as File[],
+    agentId: "agent_x",
+  };
+}
+
+describe("QueuedMessages docked list (held-only)", () => {
+  afterEach(() => {
+    useChatStore.setState({ heldMessages: [], pendingUserMessages: [] });
   });
 
-  it("shows no badge for a plain (non-queued) bubble — including after pickup promotes it", () => {
-    // A committed bubble carries no `queued`, so drop-on-pickup falls out
-    // for free: once the consume event promotes the optimistic entry, the
-    // bubble renders here with no badge.
-    renderBubble(userBubble("hi there"));
-    expect(screen.queryByTestId("message-delivery-status")).toBeNull();
+  it("renders a held row with Steer and Delete actions", () => {
+    useChatStore.setState({
+      heldMessages: [heldMsg("h1", "queued follow-up")],
+      pendingUserMessages: [],
+    });
+    renderQueue();
+    const row = screen.getByTestId("queued-message");
+    expect(row).toHaveAttribute("data-queued-state", "held");
+    expect(row).toHaveTextContent("queued follow-up");
+    // Every strip row is a held message — always actionable: send-now + remove.
+    expect(screen.getByTestId("queued-steer")).toBeInTheDocument();
+    expect(screen.getByTestId("queued-delete")).toBeInTheDocument();
   });
 
-  it("shows no badge on a [System: ...] notification even if flagged queued", () => {
-    // System markers swap to the muted SystemMessageView before any badge.
+  it("stacks multiple held rows in FIFO order", () => {
+    useChatStore.setState({
+      heldMessages: [heldMsg("h1", "first"), heldMsg("h2", "second")],
+      pendingUserMessages: [],
+    });
+    renderQueue();
+    const rows = screen.getAllByTestId("queued-message");
+    expect(rows[0]).toHaveTextContent("first");
+    expect(rows[1]).toHaveTextContent("second");
+  });
+
+  it("Delete drops the held row with no server round trip", () => {
+    useChatStore.setState({
+      heldMessages: [heldMsg("h1", "cancel me"), heldMsg("h2", "keep me")],
+      pendingUserMessages: [],
+    });
+    renderQueue();
+    // Delete the first row.
+    fireEvent.click(screen.getAllByTestId("queued-delete")[0]!);
+    expect(useChatStore.getState().heldMessages.map((h) => h.text)).toEqual(["keep me"]);
+    expect(screen.getByTestId("queued-message")).toHaveTextContent("keep me");
+  });
+
+  it("Steer hands the held message to steerHeldMessage", () => {
+    const realSteer = useChatStore.getState().steerHeldMessage;
+    const steerSpy = vi.fn();
+    useChatStore.setState({
+      steerHeldMessage: steerSpy,
+      heldMessages: [heldMsg("h1", "send now")],
+      pendingUserMessages: [],
+    });
+    renderQueue();
+    fireEvent.click(screen.getByTestId("queued-steer"));
+    expect(steerSpy).toHaveBeenCalledWith("h1");
+    // Restore so the spy can't leak into a later test.
+    useChatStore.setState({ steerHeldMessage: realSteer });
+  });
+
+  it("keeps steered (queued) sends OUT of the strip — they render inline instead", () => {
+    // A steered send is a queued pending entry; it moves into the transcript
+    // (see UserBubble), so the docked strip (held-only) must ignore it.
+    useChatStore.setState({
+      heldMessages: [],
+      pendingUserMessages: [
+        { tempId: "p1", content: [{ type: "input_text", text: "on its way" }], queued: true },
+      ],
+    });
+    const { container } = renderQueue();
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByTestId("queued-messages")).toBeNull();
+  });
+});
+
+describe("UserBubble steered (queued) treatment", () => {
+  it("renders a steered bubble at full opacity with a status caption underneath", () => {
+    renderBubble(userBubble("on its way", { queued: true }));
+    const bubble = screen.getByTestId("message-bubble");
+    expect(bubble).toHaveAttribute("data-queued", "true");
+    // No fade: a washed-out bubble reads as "failed to send" and dims the
+    // user's own text. The caption alone carries the pending state.
+    expect(bubble.className).not.toContain("opacity-70");
+    const caption = screen.getByTestId("queued-bubble-indicator");
+    expect(caption).toHaveTextContent("Queued — waiting to be picked up");
+  });
+
+  it("renders a normal (committed) bubble with no caption", () => {
+    // Drop-on-pickup: a committed bubble carries no `queued`, so the
+    // caption lifts on its own once the message is promoted.
+    renderBubble(userBubble("delivered"));
+    const bubble = screen.getByTestId("message-bubble");
+    expect(bubble).not.toHaveAttribute("data-queued");
+    expect(screen.queryByTestId("queued-bubble-indicator")).toBeNull();
+  });
+
+  it("never applies the queued treatment to a [System: ...] notification", () => {
+    // System markers render via SystemMessageView before any bubble chrome.
     renderBubble(userBubble("[System: task done]", { queued: true }));
-    expect(screen.queryByTestId("message-delivery-status")).toBeNull();
+    expect(screen.queryByTestId("message-bubble")).toBeNull();
+    expect(screen.queryByTestId("queued-bubble-indicator")).toBeNull();
   });
 });
 

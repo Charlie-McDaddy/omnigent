@@ -35,14 +35,25 @@ User-message bubbles are ``data-testid="message-bubble"`` +
 text is deterministic regardless of the LLM's reply, so assertions key
 off unique sentinel strings — no dependence on model output.
 
-The final test also covers the **"Queued" badge** (``data-testid=
-"message-delivery-status"``): a message sent while a turn is in flight
-carries ``queued`` on its optimistic pending entry, so the bubble shows
-a "Queued" chip; when the agent picks the message up its
-``session.input.consumed`` promotes the bubble into committed history
-(which has no ``queued``), so the chip drops on its own — drop-on-pickup,
-no extra client state. The badge is optimistic (client send-time state),
-so it's observable in the natural in-flight window without gating the LLM.
+The last three tests cover the **docked queue** and its queue-vs-steer UX
+(``data-testid="queued-message"``, the Codex model): a follow-up composed
+while a turn is in flight is HELD client-side — never POSTed — and rendered
+as an actionable row above the composer (``data-queued-state="held"`` with a
+Steer + Delete button) rather than as a transcript bubble. Three exits:
+
+  * **Delete** (``data-testid="queued-delete"``) drops the row with no
+    server round trip — the message is never sent.
+  * **Steer** (``data-testid="queued-steer"``) POSTs it into the running
+    task's inbox: the row LEAVES the strip and appears inline in the
+    transcript as a user bubble marked ``data-queued="true"`` (with a
+    "Queued" caption underneath) until its ``session.input.consumed`` clears
+    the marker and it's a normal bubble.
+  * **Auto-flush** — a held message left untouched still sends when the turn
+    it was waiting behind completes (the agent goes idle), so a queued
+    message is never silently stranded.
+
+Held / steered state is client send-time state, so it's observable in the
+natural in-flight window without gating the LLM.
 """
 
 from __future__ import annotations
@@ -58,10 +69,13 @@ _NAV_MSG = "sentinel-nav-7f3a remember this exact phrase"
 _PROMOTE_MSG = "sentinel-promote-91b2 keep this bubble"
 _QUEUE_MSG_A = "sentinel-queue-a-4d1e first of two"
 _QUEUE_MSG_B = "sentinel-queue-b-8c6f second of two"
-# Badge test: A holds the turn open (blocked on the mock gate) so B,
-# sent while A streams, is observably "Queued" before it's picked up.
-_BADGE_MSG_A = "sentinel-badge-a-2f7d hold the turn open"
-_BADGE_MSG_B = "sentinel-badge-b-3e9a queued behind the first"
+# Docked-list test: A holds the turn open so B, composed while A streams, is
+# observably held (docked above the composer) before it's steered.
+_DOCK_MSG_A = "sentinel-dock-a-2f7d hold the turn open"
+_DOCK_MSG_B = "sentinel-dock-b-3e9a queued behind the first"
+# Auto-flush test: B is held and left untouched; it must send when A goes idle.
+_AUTO_MSG_A = "sentinel-auto-a-6b2c the first turn"
+_AUTO_MSG_B = "sentinel-auto-b-1e8d held and never touched"
 
 _COMPOSER_PLACEHOLDER = "Ask the agent anything…"
 
@@ -71,9 +85,14 @@ def _user_bubble(page: Page, text: str):
     return page.locator('[data-testid="message-bubble"][data-role="user"]').filter(has_text=text)
 
 
-def _queued_badge(page: Page, text: str):
-    """Locator for the "Queued" chip on the user bubble carrying ``text``."""
-    return _user_bubble(page, text).locator('[data-testid="message-delivery-status"]')
+def _queued_row(page: Page, text: str):
+    """Locator for the docked queue row carrying ``text``.
+
+    Both held (not-yet-sent) and steered (in-flight) follow-ups render in the
+    strip above the composer (``data-testid="queued-message"``), NOT inline in
+    the transcript; the ``data-queued-state`` attribute distinguishes them.
+    """
+    return page.locator('[data-testid="queued-message"]').filter(has_text=text)
 
 
 def _send(page: Page, text: str) -> None:
@@ -167,87 +186,141 @@ def test_user_message_survives_navigation_away_and_back(
     expect(_user_bubble(page, _NAV_MSG)).to_be_visible()
 
 
-def test_second_message_queued_while_first_streams_both_render(
+def test_held_message_can_be_deleted_before_sending(
     page: Page,
     seeded_session: tuple[str, str],
 ) -> None:
-    """Queue a second message while the first turn is active: both render.
+    """A follow-up composed mid-turn holds client-side; Delete drops it.
 
-    Sends A, then types B and clicks Send while A's turn is still in
-    flight (the composer keeps a working Send button whenever it holds a
-    draft — ``showInterruptButton = isWorking && !hasDraft``). Both user
-    bubbles must render and, once everything settles, persist as exactly
-    one bubble each.
+    Sends A, then types B and clicks Send while A's turn is still in flight
+    (the composer keeps a working Send button whenever it holds a draft —
+    ``showInterruptButton = isWorking && !hasDraft``). Because the agent is
+    busy, B is HELD — it docks above the composer as an actionable row
+    (``data-queued-state="held"``) and is NOT sent, so it never becomes a
+    transcript bubble. Clicking its Delete (×) removes it with no server
+    round trip, and it stays gone after A's turn finishes.
 
-    This exercises queueing two optimistic bubbles and promoting both as
-    their ``session.input.consumed`` events arrive in order — a count
-    other than 1 for either means the FIFO promotion dropped or
-    duplicated a queued bubble.
+    This is the client-side-queue guarantee: a held message never reached
+    the server, so cancel is truthful — B is never delivered to the agent.
     """
     base_url, session_id = seeded_session
     page.goto(f"{base_url}/c/{session_id}")
 
     _send(page, _QUEUE_MSG_A)
-    # A's optimistic bubble is up; the turn is now (or about to be)
-    # working. Queue B immediately by typing a draft and sending again.
     expect(_user_bubble(page, _QUEUE_MSG_A)).to_be_visible(timeout=10_000)
-    _send(page, _QUEUE_MSG_B)
-    expect(_user_bubble(page, _QUEUE_MSG_B)).to_be_visible(timeout=10_000)
 
-    # Let both turns drain. Two distinct user messages were sent, so once
-    # the session goes idle there must be exactly one bubble for each —
-    # both consumed and promoted, neither dropped nor double-rendered.
+    # Compose B while A is in flight → held (not sent), with actions.
+    _send(page, _QUEUE_MSG_B)
+    row = _queued_row(page, _QUEUE_MSG_B)
+    expect(row).to_be_visible(timeout=10_000)
+    expect(row).to_have_attribute("data-queued-state", "held")
+    # Held → NOT an inline transcript bubble.
+    expect(_user_bubble(page, _QUEUE_MSG_B)).to_have_count(0)
+
+    # Delete it — client-only, no POST — and it's gone.
+    row.get_by_test_id("queued-delete").click()
+    expect(_queued_row(page, _QUEUE_MSG_B)).to_have_count(0)
+
+    # Let A's turn finish. B must never appear as a transcript bubble (it was
+    # never sent); A is unaffected — exactly one bubble.
     assistant = page.locator('[data-testid="message-bubble"][data-role="assistant"]').first
     expect(assistant).to_have_text(re.compile(r"\S"), timeout=60_000)
-    expect(_user_bubble(page, _QUEUE_MSG_A)).to_have_count(1, timeout=60_000)
-    expect(_user_bubble(page, _QUEUE_MSG_B)).to_have_count(1, timeout=60_000)
+    expect(_user_bubble(page, _QUEUE_MSG_B)).to_have_count(0)
+    expect(_user_bubble(page, _QUEUE_MSG_A)).to_have_count(1)
 
 
-def test_queued_badge_shows_then_drops_on_pickup(
+def _queued_user_bubble(page: Page, text: str):
+    """Locator for an inline user bubble in the *queued* (steered) state.
+
+    A steered send leaves the strip and renders as a normal user bubble marked
+    ``data-queued="true"`` (with a "Queued" caption underneath) until it's
+    picked up.
+    """
+    return page.locator(
+        '[data-testid="message-bubble"][data-role="user"][data-queued="true"]'
+    ).filter(has_text=text)
+
+
+def test_held_message_steers_into_transcript_then_promotes(
     page: Page,
     seeded_session: tuple[str, str],
 ) -> None:
-    """A message queued behind a live turn shows "Queued", then it drops.
+    """Held → Steer moves it into the transcript (queued), then pickup promotes it.
 
-    Same setup as ``test_second_message_queued_while_first_streams_both_render``
-    (send A, then send B while A's turn is still in flight), but asserting
-    the delivery badge rather than just bubble survival:
+    The full queue-vs-steer lifecycle end-to-end:
 
-    1. While B is queued behind A's active turn, B's optimistic bubble
-       carries ``queued`` (set from the live ``status``/``sessionStatus``
-       at submit time), so its "Queued" chip renders — the state the UI
-       couldn't show before: a message visibly waiting behind a busy agent.
-    2. Once both turns drain, B has been picked up and its
-       ``session.input.consumed`` promotes it into committed history (which
-       has no ``queued``), so the chip disappears on its own — drop-on-
-       pickup, the whole point of the simplified design. No extra client
-       state, no pickup signal.
+    1. Send A → its turn goes to work. Compose B while A is in flight: B is
+       held, docked as an actionable row, and NOT a transcript bubble —
+       nothing is POSTed yet (a message visibly waiting, still under the
+       user's control).
+    2. Click **Steer** on B → it's POSTed into the running task's inbox and
+       LEAVES the strip, appearing inline in the transcript as a user bubble
+       marked ``data-queued="true"`` (with a "Queued" caption underneath):
+       sent, awaiting pickup, no longer cancelable.
+    3. On pickup B's ``session.input.consumed`` clears the ``data-queued``
+       marker — it's now a normal committed bubble, exactly one, no dup.
 
-    The badge is optimistic (driven by client send-time state), so step 1
-    doesn't depend on gating the LLM — it's observable in the same natural
-    in-flight window the sibling test relies on. Step 2's assertion waits
-    out the turns, so it's robust even if the window in step 1 is brief.
+    Steps 1–2 ride the natural in-flight window (client send-time state),
+    so no LLM gating is needed; step 3 waits the turns out.
     """
     base_url, session_id = seeded_session
     page.goto(f"{base_url}/c/{session_id}")
 
     # Send A; as soon as its bubble is up the turn is (about to be) working.
-    _send(page, _BADGE_MSG_A)
-    expect(_user_bubble(page, _BADGE_MSG_A)).to_be_visible(timeout=10_000)
+    _send(page, _DOCK_MSG_A)
+    expect(_user_bubble(page, _DOCK_MSG_A)).to_be_visible(timeout=10_000)
 
-    # Queue B immediately, while A's turn is in flight. B's "Queued" chip
-    # renders from the optimistic send-time state.
-    _send(page, _BADGE_MSG_B)
-    expect(_user_bubble(page, _BADGE_MSG_B)).to_be_visible(timeout=10_000)
-    badge = _queued_badge(page, _BADGE_MSG_B)
-    expect(badge).to_be_visible(timeout=10_000)
-    expect(badge).to_have_text("Queued")
+    # Compose B while A is in flight → held, with Steer + Delete actions.
+    _send(page, _DOCK_MSG_B)
+    row = _queued_row(page, _DOCK_MSG_B)
+    expect(row).to_be_visible(timeout=10_000)
+    expect(row).to_have_attribute("data-queued-state", "held")
+    expect(row.get_by_test_id("queued-steer")).to_be_visible()
+    expect(row.get_by_test_id("queued-delete")).to_be_visible()
+    # Held → not yet an inline transcript bubble.
+    expect(_user_bubble(page, _DOCK_MSG_B)).to_have_count(0)
 
-    # Let both turns drain. Once B is picked up its bubble promotes to
-    # committed (no `queued`), so the "Queued" chip drops on its own.
+    # Steer it → POSTed into A's inbox; it leaves the strip and shows up
+    # inline as a queued (data-queued) bubble while it waits for pickup.
+    row.get_by_test_id("queued-steer").click()
+    expect(_queued_row(page, _DOCK_MSG_B)).to_have_count(0, timeout=10_000)
+    expect(_queued_user_bubble(page, _DOCK_MSG_B)).to_be_visible(timeout=10_000)
+
+    # Drain both turns. Once B is picked up the queued marker clears — it's a
+    # normal committed bubble, exactly one each, no drop/dup.
     assistant = page.locator('[data-testid="message-bubble"][data-role="assistant"]').first
     expect(assistant).to_have_text(re.compile(r"\S"), timeout=60_000)
-    expect(_queued_badge(page, _BADGE_MSG_B)).to_have_count(0, timeout=60_000)
-    # Both messages still render exactly once (sanity: no drop/dup).
-    expect(_user_bubble(page, _BADGE_MSG_A)).to_have_count(1, timeout=60_000)
-    expect(_user_bubble(page, _BADGE_MSG_B)).to_have_count(1)
+    expect(_queued_user_bubble(page, _DOCK_MSG_B)).to_have_count(0, timeout=60_000)
+    expect(_user_bubble(page, _DOCK_MSG_A)).to_have_count(1, timeout=60_000)
+    expect(_user_bubble(page, _DOCK_MSG_B)).to_have_count(1, timeout=60_000)
+
+
+def test_held_message_auto_sends_when_agent_goes_idle(
+    page: Page,
+    seeded_session: tuple[str, str],
+) -> None:
+    """A held follow-up left untouched still sends when the agent frees up.
+
+    The bug guard: send A → working. Compose B (held) and leave it — never
+    Steer, never Delete. When A's turn completes and the session goes idle,
+    the held queue auto-flushes: B leaves the strip and lands in the
+    transcript as a real bubble. A queued message must never be stranded.
+    """
+    base_url, session_id = seeded_session
+    page.goto(f"{base_url}/c/{session_id}")
+
+    _send(page, _AUTO_MSG_A)
+    expect(_user_bubble(page, _AUTO_MSG_A)).to_be_visible(timeout=10_000)
+
+    # Compose B while A is in flight → held, and NOT a transcript bubble.
+    _send(page, _AUTO_MSG_B)
+    expect(_queued_row(page, _AUTO_MSG_B)).to_have_attribute(
+        "data-queued-state", "held", timeout=10_000
+    )
+    expect(_user_bubble(page, _AUTO_MSG_B)).to_have_count(0)
+
+    # Leave it alone. When A's turn ends (idle), the held queue auto-flushes:
+    # B leaves the strip and is sent — it renders as exactly one transcript
+    # bubble without any user action.
+    expect(_queued_row(page, _AUTO_MSG_B)).to_have_count(0, timeout=60_000)
+    expect(_user_bubble(page, _AUTO_MSG_B)).to_have_count(1, timeout=60_000)

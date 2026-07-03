@@ -19,6 +19,7 @@ import {
   AlertTriangleIcon,
   ChevronDownIcon,
   ClockIcon,
+  CornerRightUpIcon,
   CornerUpLeftIcon,
   CopyIcon,
   FileTextIcon,
@@ -219,6 +220,14 @@ export function containsMarkdownTable(items: RenderItem[]): boolean {
 /**
  * Build optimistic user bubbles from the pending-send queue.
  *
+ * A steered send (`p.queued`) renders inline in the transcript like any
+ * other optimistic bubble, but carries `queued` through so {@link UserBubble}
+ * shows a "Queued" caption until the agent picks it up — its
+ * `session.input.consumed` then promotes it into committed history (which
+ * carries no `queued`), lifting the pending treatment. (Un-sent *held*
+ * messages are not pending entries at all — they live in
+ * {@link ChatState.heldMessages} and render in the docked strip.)
+ *
  * Author priority per bubble: `p.author` (captured at send time for
  * fresh sends, or from the snapshot's `created_by` for replayed entries)
  * falls back to `selfAuthor` (the current viewer's identity).
@@ -233,7 +242,7 @@ export function containsMarkdownTable(items: RenderItem[]): boolean {
  * `selfAuthor` is null before identity resolves and in single-user
  * mode (no label shown).
  *
- * @param pending - the queued optimistic sends, in FIFO order.
+ * @param pending - the pending optimistic sends, in FIFO order.
  * @param selfAuthor - the viewer's attribution id, or null.
  */
 export function buildPendingBubbles(
@@ -251,6 +260,105 @@ export function buildPendingBubbles(
       ...(p.queued ? { queued: true } : {}),
     };
   });
+}
+
+/**
+ * One-line preview text for a queued message row.
+ *
+ * The queued list is a compact strip, so it shows the typed text. An
+ * image-/file-only queued message has no text — fall back to the first
+ * attachment's filename so the row is never blank.
+ */
+function queuedMessagePreview(content: MessageContentBlock[]): string {
+  const text = extractUserText(content);
+  if (text) return text;
+  for (const c of content) {
+    if ((c.type === "input_image" || c.type === "input_file") && c.filename) {
+      return c.filename;
+    }
+  }
+  return "Attachment";
+}
+
+/**
+ * The docked message queue — a compact stack directly above the composer,
+ * mirroring the Codex chat UX: follow-ups "waiting to be sent" sit right
+ * above the input.
+ *
+ * Holds only **held** messages — follow-ups composed while the agent was
+ * busy and parked client-side (see {@link HeldMessage}), never sent. Each
+ * row is actionable: **Delete** ({@link ChatState.deleteHeldMessage}) drops
+ * it for free, and **Steer** ({@link ChatState.steerHeldMessage}) POSTs it —
+ * at which point it LEAVES this strip and appears inline in the transcript
+ * as a "Queued"-captioned bubble (see {@link UserBubble}) until the agent
+ * picks it up. So the strip is exactly "the messages you can still take
+ * back." Column-aligned with the composer box.
+ */
+export function QueuedMessages() {
+  // Subscribe to the array directly (stable reference; changes only when the
+  // store replaces it). A steered message is no longer here — it moves into
+  // the transcript — so this renders `heldMessages` verbatim, in FIFO order.
+  const heldMessages = useChatStore((s) => s.heldMessages);
+  if (heldMessages.length === 0) return null;
+
+  return (
+    <div className="px-4 md:px-6">
+      <div
+        data-testid="queued-messages"
+        className={cn(
+          "mx-auto mb-1.5 flex w-full flex-col divide-y divide-border overflow-hidden rounded-xl border border-border bg-muted/40",
+          CHAT_COLUMN_WIDTH,
+        )}
+      >
+        {heldMessages.map((held) => (
+          <div
+            key={held.tempId}
+            data-testid="queued-message"
+            data-queued-state="held"
+            className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground"
+          >
+            <ClockIcon className="size-3.5 shrink-0" aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate">{queuedMessagePreview(held.content)}</span>
+            <div className="flex shrink-0 items-center gap-0.5">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    data-testid="queued-steer"
+                    // "Steer", not "Send now": a held message auto-sends when the
+                    // agent frees up (see maybeFlushHeldMessages), so this button
+                    // EXPEDITES it into the running turn rather than being the
+                    // only way it ever sends. The corner-right-up glyph reads as
+                    // "redirect up into the running turn" — a steer, not a send.
+                    aria-label="Steer"
+                    onClick={() => useChatStore.getState().steerHeldMessage(held.tempId)}
+                    className="rounded p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                  >
+                    <CornerRightUpIcon className="size-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Steer</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    data-testid="queued-delete"
+                    aria-label="Delete"
+                    onClick={() => useChatStore.getState().deleteHeldMessage(held.tempId)}
+                    className="rounded p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                  >
+                    <XIcon className="size-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Delete</TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // A committed bubble that exists ONLY to render one or more
@@ -884,6 +992,14 @@ export function ChatPage() {
     // a void.
     if (urlConvId && isUnreachable) {
       setReconnectDialogOpen(true);
+      return;
+    }
+    // Codex-style queue: while the agent is busy, hold this follow-up on the
+    // client-side docked queue (cancelable / steerable) instead of POSTing
+    // it. It only reaches the server when the user clicks Steer. Matches the
+    // busy check `send` uses internally so the two never disagree.
+    if (status === "streaming" || computeIsWorking(sessionStatus)) {
+      useChatStore.getState().holdMessage(text, agentId, files);
       return;
     }
     void useChatStore.getState().send(text, agentId, files, {
@@ -1629,6 +1745,9 @@ function MainAgentSurface({
         containerRef={conversationRef}
         onReply={(text) => setReplyQuotes((prev) => [...prev, text])}
       />
+
+      {/* Follow-ups queued behind a busy agent, stacked above the composer. */}
+      <QueuedMessages />
 
       <Composer
         disabled={disabled}
@@ -2700,11 +2819,12 @@ function UserBubble({ bubble }: { bubble: Extract<Bubble, { kind: "user" }> }) {
   const showAuthorBadge = shouldShowAuthorBadge(author, getCurrentAuthorId(), isSessionShared);
   // Equality selector so Zustand only re-renders the matching bubble.
   const flashing = useChatStore((s) => s.flashItemId === bubble.itemId);
-  // "Queued": the message was POSTed while the agent was busy, so it waits
-  // in the running task's inbox. The flag rides on the optimistic pending
-  // entry; when the agent picks the message up its `session.input.consumed`
-  // event promotes the bubble into committed history (which carries no
-  // `queued`), so the badge simply disappears — no pickup signal needed.
+  // A steered send that hasn't been picked up yet: render it inline like any
+  // committed message, with an iMessage-style status caption underneath
+  // (pulsing clock + "Queued…"), until its `session.input.consumed` promotes
+  // it (committed bubbles carry no `queued`, so the caption lifts on its
+  // own). The bubble itself stays full-opacity — a washed-out bubble reads
+  // as "failed to send", and fading dims the user's own text.
   const queued = bubble.queued === true;
   return (
     <Message
@@ -2712,6 +2832,7 @@ function UserBubble({ bubble }: { bubble: Extract<Bubble, { kind: "user" }> }) {
       data-testid="message-bubble"
       data-role="user"
       data-user-message-id={bubble.itemId}
+      data-queued={queued ? "true" : undefined}
       className="max-w-3xl"
     >
       {/* w-fit + ml-auto shrink-wrap the row so the author avatar sits
@@ -2799,18 +2920,16 @@ function UserBubble({ bubble }: { bubble: Extract<Bubble, { kind: "user" }> }) {
           {text && <FilePathAwareMessageResponse breaks>{text}</FilePathAwareMessageResponse>}
         </MessageContent>
       </div>
-      {/* "Queued" indicator, right-aligned under the bubble: shows while the
-          message waits in a busy agent's inbox, and disappears on its own
-          when the agent picks it up (the bubble promotes to committed).
-          Subtle muted text — never on a plain idle send. */}
+      {/* Pending-pickup caption, tucked under the bubble's corner (`Message`
+          is a flex-col; -mt tightens its gap-2). The pulse says "resolves on
+          its own"; the copy says why — no hover needed. */}
       {queued && (
         <div
-          className="ml-auto mt-0.5 flex w-fit items-center gap-1 text-xs text-muted-foreground"
-          data-testid="message-delivery-status"
-          data-delivery-status="queued"
+          data-testid="queued-bubble-indicator"
+          className="-mt-1 ml-auto flex items-center gap-1 pr-1 text-xs text-muted-foreground"
         >
-          <ClockIcon className="size-3 shrink-0" />
-          <span>Queued</span>
+          <ClockIcon className="size-3 shrink-0 animate-pulse" aria-hidden="true" />
+          <span>Queued — waiting to be picked up</span>
         </div>
       )}
     </Message>

@@ -132,10 +132,11 @@ export type Bubble =
        */
       stableKey?: string;
       /**
-       * True when this (still-optimistic) message was POSTed while a turn
-       * was already streaming, so the server queued it into the running
-       * task's inbox rather than starting a turn. Drives the "Queued"
-       * bubble badge. Unset once the message is committed.
+       * True while this (still-optimistic) message is a *steered* send —
+       * POSTed into a busy agent's inbox and not yet picked up. The bubble
+       * renders inline in the transcript with a "Queued" caption until
+       * its `session.input.consumed` promotes it to a committed bubble (which
+       * carries no `queued`). Drives {@link UserBubble}'s pending treatment.
        */
       queued?: boolean;
     }

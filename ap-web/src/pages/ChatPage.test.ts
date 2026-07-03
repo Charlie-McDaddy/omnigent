@@ -335,17 +335,25 @@ describe("buildPendingBubbles", () => {
     expect(bubble.createdBy).toBe("bob@example.com");
   });
 
-  it("propagates the queued flag so the bubble can show a 'Queued' badge", () => {
-    const queuedPending = [
-      { tempId: "tmp_q", content: [{ type: "input_text" as const, text: "later" }], queued: true },
+  it("propagates queued so a steered send renders inline (faded), not in the strip", () => {
+    // A steered send (queued into a busy agent's inbox) renders inline in the
+    // transcript like any pending bubble, carrying `queued` through so
+    // UserBubble fades it + shows a clock until it's picked up. (Un-sent held
+    // messages are not pending entries at all — they live in heldMessages.)
+    const mixed = [
+      { tempId: "tmp_now", content: [{ type: "input_text" as const, text: "starts a turn" }] },
+      {
+        tempId: "tmp_q",
+        content: [{ type: "input_text" as const, text: "queued behind" }],
+        queued: true,
+      },
     ];
-    const [bubble] = buildPendingBubbles(queuedPending, null) as [Extract<Bubble, { kind: "user" }>];
-    expect(bubble.queued).toBe(true);
-  });
-
-  it("omits queued for a normal (idle) send", () => {
-    const [bubble] = buildPendingBubbles(pending, null) as [Extract<Bubble, { kind: "user" }>];
-    expect(bubble.queued).toBeUndefined();
+    const bubbles = buildPendingBubbles(mixed, null) as Extract<Bubble, { kind: "user" }>[];
+    expect(bubbles).toHaveLength(2);
+    expect(bubbles[0]!.itemId).toBe("tmp_now");
+    expect(bubbles[0]!.queued).toBeUndefined();
+    expect(bubbles[1]!.itemId).toBe("tmp_q");
+    expect(bubbles[1]!.queued).toBe(true);
   });
 });
 

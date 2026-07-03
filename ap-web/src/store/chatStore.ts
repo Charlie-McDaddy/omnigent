@@ -157,6 +157,38 @@ export interface PendingUserMessage {
 }
 
 /**
+ * A follow-up the user composed while the agent was busy, held on the
+ * client instead of POSTed.
+ *
+ * The Codex-style docked queue: a message typed mid-turn is parked here
+ * (never sent) so the user can freely reorder their intent — **Delete**
+ * ({@link ChatState.deleteHeldMessage}) drops it with no server round
+ * trip, and **Steer** ({@link ChatState.steerHeldMessage}) is the only
+ * path that actually POSTs it (into the running task's inbox). Because a
+ * held message never reached the server, cancel is truthful and free;
+ * this is the client-side queue half of the queue-vs-steer split.
+ *
+ * Held only ever exists for an EXISTING busy session (you can only be
+ * mid-turn in one), so — unlike {@link PendingUserMessage} — there's no
+ * new-session `onConversationCreated` path to carry. `text`/`files` are
+ * the raw inputs, replayed verbatim through `send` on steer.
+ */
+export interface HeldMessage {
+  /** Client-only id (`held_<n>`); React key + steer/delete target. */
+  tempId: string;
+  /** Pending-style content blocks, for the one-line strip preview. */
+  content: MessageContentBlock[];
+  /** Raw typed text, replayed through `send` when steered. */
+  text: string;
+  /** Raw attachments, replayed (re-uploaded) through `send` when steered. */
+  files: File[];
+  /** Agent id captured at hold time; `send` requires it on steer. */
+  agentId: string;
+  /** Viewer identity at hold time, or omitted (single-user / unresolved). */
+  author?: string;
+}
+
+/**
  * A conversation's in-flight optimistic bubbles, stashed so they survive
  * in-app navigation. See {@link ChatState.pendingByConversation}.
  */
@@ -211,6 +243,13 @@ export interface ChatState {
   blocks: AnyBlock[];
   /** User messages POSTed but not yet acked via session.input.consumed. */
   pendingUserMessages: PendingUserMessage[];
+  /**
+   * Follow-ups composed while the agent was busy and held on the client
+   * (never POSTed) — the docked queue's cancelable rows. See
+   * {@link HeldMessage}; drained only by {@link ChatState.steerHeldMessage}
+   * or {@link ChatState.deleteHeldMessage}.
+   */
+  heldMessages: HeldMessage[];
   /**
    * In-flight optimistic bubbles stashed per conversation so they survive
    * in-app navigation (`switchTo`), keyed by conversation id.
@@ -476,6 +515,22 @@ export interface ChatState {
   // Actions.
   send: (text: string, agentId: string, files?: File[], opts?: SendOptions) => Promise<void>;
   /**
+   * Park a follow-up on the client-side docked queue instead of sending
+   * it — used when the agent is busy so the message is cancelable. Does
+   * NOT POST; appends a {@link HeldMessage}. The caller decides busy-ness
+   * (ChatPage's `onSend` routes here while `computeIsWorking`).
+   */
+  holdMessage: (text: string, agentId: string, files?: File[]) => void;
+  /** Drop a held message by id — client-only, no server round trip. */
+  deleteHeldMessage: (tempId: string) => void;
+  /**
+   * Send a held message now: remove it from {@link ChatState.heldMessages}
+   * and POST it via {@link ChatState.send} (which queues it into the
+   * running task's inbox and renders it inline with a "Queued" caption until
+   * its `session.input.consumed` promotes it). No-op if the id is unknown.
+   */
+  steerHeldMessage: (tempId: string) => void;
+  /**
    * Invoke a skill by posting a ``slash_command`` event — the same wire
    * shape the REPL sends. The server resolves the skill, persists the
    * visible receipt + hidden ``<skill>`` meta message, and forwards the
@@ -550,6 +605,10 @@ export interface ChatState {
 
 let queryClient: QueryClient | null = null;
 let pendingSeq = 0;
+// Monotonic ordering key for docked-queue rows (held + steered). Shared so a
+// steered message keeps its slot as it moves from `heldMessages` to a
+// `queued` `pendingUserMessages` entry. Module-level (one active chat).
+let heldSeq = 0;
 // Tail of the send chain. Each `send` waits on the previous send's network
 // work before issuing its own POST, so rapid-fire messages reach the server
 // in submission order. Concurrent `fetch` POSTs have no ordering guarantee,
@@ -712,6 +771,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   redirectToConversationId: null,
   blocks: [],
   pendingUserMessages: [],
+  heldMessages: [],
   pendingByConversation: {},
   activeResponse: null,
   interruptedResponseIds: [],
@@ -776,7 +836,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const ss = get().sessionStatus;
       return ss === "running" || ss === "waiting";
     })();
-    const isQueuedSend = alreadyStreaming || serverBusy;
+    // Native terminal sessions (claude-native / codex-native) always round-trip
+    // the message through the vendor TUI; the optimistic bubble is only
+    // acknowledged when its `session.input.consumed` lands. Even when omnigent
+    // currently reads `idle` (the prior turn's `session.status` fired), the
+    // vendor terminal can still be winding down and queue the message for a few
+    // seconds. Treat every native send as pending-pickup so the bubble shows the
+    // "Queued" caption until the agent actually picks it up, instead of
+    // rendering as fully-sent while it silently sits in the vendor's own queue.
+    const nativePending = get().isNativeTerminalSession;
+    const isQueuedSend = alreadyStreaming || serverBusy || nativePending;
 
     // Push to `pendingUserMessages` BEFORE the POST so the bubble
     // renders immediately AND so `session.input.consumed` finds an
@@ -806,8 +875,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ...(selfAuthor !== null ? { author: selfAuthor } : {}),
           // Sent into a turn that's already running (or an agent parked on
           // background-work drain) → the server queues it into the running
-          // task's inbox. Surface that as a "Queued" badge until its
-          // consumed event drains it.
+          // task's inbox. Surface it as a "Queued"-captioned bubble inline in
+          // the transcript until its consumed event promotes it.
           ...(isQueuedSend ? { queued: true } : {}),
         },
       ],
@@ -982,6 +1051,59 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // failed POST can't stall the chain forever.
       releaseSend();
     }
+  },
+
+  holdMessage: (text, agentId, files) => {
+    // Park a follow-up on the client-side docked queue instead of POSTing
+    // it. No network, no `pendingUserMessages` entry — a held message is
+    // cancelable precisely because the server never hears about it until
+    // the user steers it. Content blocks mirror `send`'s optimistic shape
+    // so the strip preview matches what will eventually be sent.
+    heldSeq += 1;
+    const tempId = `held_${heldSeq}`;
+    const heldFiles = files ?? [];
+    const pendingFileBlocks: MessageContentBlock[] = heldFiles.map((file) => {
+      const filename = file.name || "image.png";
+      return file.type.startsWith("image/")
+        ? { type: "input_image" as const, file_id: `pending:${filename}`, filename }
+        : { type: "input_file" as const, file_id: `pending:${filename}`, filename };
+    });
+    const content: MessageContentBlock[] = [
+      ...pendingFileBlocks,
+      ...(text.trim() ? [{ type: "input_text" as const, text }] : []),
+    ];
+    // Nothing to hold (no text and no attachments) → no-op, so an empty
+    // submit never seeds a blank row.
+    if (content.length === 0) return;
+    const selfAuthor = getCurrentAuthorId();
+    set((s) => ({
+      heldMessages: [
+        ...s.heldMessages,
+        {
+          tempId,
+          content,
+          text,
+          files: heldFiles,
+          agentId,
+          ...(selfAuthor !== null ? { author: selfAuthor } : {}),
+        },
+      ],
+    }));
+  },
+
+  deleteHeldMessage: (tempId) => {
+    set((s) => ({ heldMessages: s.heldMessages.filter((h) => h.tempId !== tempId) }));
+  },
+
+  steerHeldMessage: (tempId) => {
+    const held = get().heldMessages.find((h) => h.tempId === tempId);
+    if (!held) return;
+    // Remove from the held list synchronously and hand off to `send`. Because
+    // the agent is busy, `send` marks the pending entry `queued`, so it leaves
+    // the strip and renders inline in the transcript — with a "Queued"
+    // caption — until its `session.input.consumed` promotes it.
+    set((s) => ({ heldMessages: s.heldMessages.filter((h) => h.tempId !== tempId) }));
+    void get().send(held.text, held.agentId, held.files);
   },
 
   sendSlashCommand: async (name, args, agentId, opts) => {
@@ -1217,6 +1339,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         blocks: [],
         pendingUserMessages:
           conversationId !== null ? (pendingByConversation[conversationId]?.messages ?? []) : [],
+        // Held (un-sent) follow-ups are ephemeral and tied to the session
+        // they were composed in — a switch drops them rather than leaking
+        // them into the newly-active conversation.
+        heldMessages: [],
         activeResponse: null,
         interruptedResponseIds: [],
         status: "idle",
@@ -3366,6 +3492,37 @@ function removeFromPendingStash(
 }
 
 /**
+ * Send any client-side held follow-ups now that the agent is idle.
+ *
+ * The held queue is normally drained by the user clicking Steer, but a
+ * message they queued and left alone must still send once the turn it was
+ * waiting behind completes — otherwise it's silently stranded (the reported
+ * bug). Called from the `session_status` → idle handler, after the state has
+ * settled. FIFO via the module send chain: the first `send` starts the next
+ * turn; any remaining held messages `send` while it's streaming, so they
+ * queue server-side and render with the "Queued" caption until picked up.
+ *
+ * No-op unless `conversationId` is the active session AND it is genuinely
+ * idle (not a spurious idle while a prior response still streams) with
+ * something held.
+ *
+ * @param conversationId - the session whose turn just went idle.
+ */
+function maybeFlushHeldMessages(conversationId: string): void {
+  const state = useChatStore.getState();
+  if (state.conversationId !== conversationId) return;
+  if (state.status === "streaming" || state.sessionStatus !== "idle") return;
+  const held = state.heldMessages;
+  if (held.length === 0) return;
+  // Clear before sending so a re-entrant idle can't double-flush the same
+  // entries; the sends below re-populate `pendingUserMessages` optimistically.
+  useChatStore.setState({ heldMessages: [] });
+  for (const h of held) {
+    void state.send(h.text, h.agentId, h.files);
+  }
+}
+
+/**
  * Apply store side effects for a `session.*` SSE event.
  *
  * Exported for direct unit testing — production code reaches this
@@ -3664,6 +3821,13 @@ export function handleSessionEvent(event: StreamEvent): void {
           });
         }
       }
+      // Auto-flush the held queue now that the agent has freed up. A follow-up
+      // the user queued but never manually steered still has to send once the
+      // turn it was waiting behind ends — otherwise it sits stranded forever.
+      // Runs AFTER the setState above so it reads the settled status.
+      if (event.status === "idle") {
+        maybeFlushHeldMessages(event.conversationId);
+      }
       return;
     }
     case "session_input_consumed":
@@ -3814,6 +3978,9 @@ export function handleSessionEvent(event: StreamEvent): void {
         return {
           redirectToConversationId: event.targetConversationId,
           pendingUserMessages: [],
+          // Held follow-ups belong to the superseded conversation; drop them
+          // so they don't leak into the rotated-to session.
+          heldMessages: [],
           pendingByConversation,
         };
       });

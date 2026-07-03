@@ -350,6 +350,7 @@ beforeEach(() => {
     conversationId: null,
     blocks: [],
     pendingUserMessages: [],
+    heldMessages: [],
     // Reset the per-conversation stash too, or a stash entry left by one
     // navigation test leaks into the next (the entry survives switchTo by
     // design — that's the whole point — so beforeEach must clear it).
@@ -2413,7 +2414,12 @@ describe("chatStore — send (cross-session routing)", () => {
   });
 });
 
-describe("chatStore — queued delivery badge", () => {
+// `send` while busy stamps the `queued` flag on the optimistic pending
+// entry — the mechanism behind the inline "Queued"-captioned (steered) bubble.
+// The composer no longer calls `send` directly while busy (it holds instead;
+// see the held-queue block below), but `steerHeldMessage` does, so these pin
+// the underlying behavior steering relies on.
+describe("chatStore — steered send (queued flag)", () => {
   it("stamps queued=true on a send made while a turn is already streaming", async () => {
     useChatStore.setState({
       conversationId: "conv_existing",
@@ -2462,6 +2468,27 @@ describe("chatStore — queued delivery badge", () => {
     expect(pending[0]!.queued).toBe(true);
   });
 
+  it("stamps queued=true on a native-terminal send even when idle (round-trip pending)", async () => {
+    // Native (claude/codex-native) round-trips the message through the vendor
+    // TUI: even when omnigent reads `idle`, the terminal can still be winding
+    // down and queue it for a few seconds. Mark it pending-pickup so the bubble
+    // shows the "Queued" caption until session.input.consumed lands,
+    // instead of rendering fully-sent while it sits in the vendor's own queue.
+    useChatStore.setState({
+      conversationId: "conv_native",
+      abortController: new AbortController(),
+      status: "idle",
+      sessionStatus: "idle",
+      isNativeTerminalSession: true,
+    });
+
+    await useChatStore.getState().send("hey", "agent_xyz");
+
+    const pending = useChatStore.getState().pendingUserMessages;
+    expect(pending).toHaveLength(1);
+    expect(pending[0]!.queued).toBe(true);
+  });
+
   it("drops the queued badge when the agent picks the message up (consume → promote)", async () => {
     // Drop-on-pickup: the "Queued" flag rides only on the optimistic
     // pending entry. Its session.input.consumed event promotes it into
@@ -2490,6 +2517,173 @@ describe("chatStore — queued delivery badge", () => {
     const promoted = state.blocks.find((b) => b.type === "user_message") as UserMessageBlock;
     expect(promoted).toBeDefined();
     expect("queued" in promoted).toBe(false);
+  });
+});
+
+describe("chatStore — held queue (hold / steer / delete)", () => {
+  it("holdMessage parks a follow-up client-side without POSTing", () => {
+    useChatStore.setState({
+      conversationId: "conv_existing",
+      abortController: new AbortController(),
+      status: "streaming",
+    });
+
+    useChatStore.getState().holdMessage("hold me", "agent_xyz");
+
+    const state = useChatStore.getState();
+    // Held, not pending — the whole point is it never hit the server.
+    expect(state.heldMessages).toHaveLength(1);
+    expect(state.heldMessages[0]!.content).toEqual([{ type: "input_text", text: "hold me" }]);
+    expect(state.heldMessages[0]!.agentId).toBe("agent_xyz");
+    expect(state.pendingUserMessages).toEqual([]);
+    const events = fetchMock.mock.calls.filter(([u]) =>
+      String(u).endsWith("/v1/sessions/conv_existing/events"),
+    );
+    expect(events).toHaveLength(0);
+  });
+
+  it("holdMessage ignores an empty submit (no text, no files)", () => {
+    useChatStore.getState().holdMessage("   ", "agent_xyz");
+    expect(useChatStore.getState().heldMessages).toEqual([]);
+  });
+
+  it("deleteHeldMessage drops the row with no server round trip", () => {
+    useChatStore.setState({ conversationId: "conv_existing", status: "streaming" });
+    useChatStore.getState().holdMessage("a", "agent_xyz");
+    useChatStore.getState().holdMessage("b", "agent_xyz");
+    const first = useChatStore.getState().heldMessages[0]!;
+
+    useChatStore.getState().deleteHeldMessage(first.tempId);
+
+    const held = useChatStore.getState().heldMessages;
+    expect(held).toHaveLength(1);
+    expect(held[0]!.content).toEqual([{ type: "input_text", text: "b" }]);
+  });
+
+  it("steerHeldMessage POSTs the held message as a queued (inline) send", async () => {
+    useChatStore.setState({
+      conversationId: "conv_existing",
+      abortController: new AbortController(),
+      status: "streaming",
+    });
+    useChatStore.getState().holdMessage("steer me", "agent_xyz");
+    const held = useChatStore.getState().heldMessages[0]!;
+
+    useChatStore.getState().steerHeldMessage(held.tempId);
+    await tick(); // let the fire-and-forget send() reach its POST
+
+    const state = useChatStore.getState();
+    // Left the held list; became a queued pending entry (which buildBubbles
+    // renders inline in the transcript with a "Queued" caption until it's
+    // picked up).
+    expect(state.heldMessages).toEqual([]);
+    expect(state.pendingUserMessages).toHaveLength(1);
+    expect(state.pendingUserMessages[0]!.queued).toBe(true);
+    // The POST actually went out with the held content.
+    const events = fetchMock.mock.calls.filter(([u]) =>
+      String(u).endsWith("/v1/sessions/conv_existing/events"),
+    );
+    expect(events).toHaveLength(1);
+    const body = JSON.parse((events[0]![1] as RequestInit).body as string);
+    expect(body.data.content).toEqual([{ type: "input_text", text: "steer me" }]);
+  });
+
+  it("steerHeldMessage is a no-op for an unknown id", () => {
+    useChatStore.getState().steerHeldMessage("held_nope");
+    expect(useChatStore.getState().heldMessages).toEqual([]);
+    expect(useChatStore.getState().pendingUserMessages).toEqual([]);
+  });
+
+  it("a steered message leaves the queue when the agent picks it up", async () => {
+    useChatStore.setState({
+      conversationId: "conv_existing",
+      abortController: new AbortController(),
+      status: "streaming",
+    });
+    useChatStore.getState().holdMessage("steer me", "agent_xyz");
+    useChatStore.getState().steerHeldMessage(useChatStore.getState().heldMessages[0]!.tempId);
+    await tick();
+    expect(useChatStore.getState().pendingUserMessages[0]!.queued).toBe(true);
+
+    handleSessionEvent({
+      type: "session_input_consumed",
+      itemId: "msg_q_1",
+      itemType: "message",
+      data: { role: "user", content: [{ type: "input_text", text: "steer me" }] },
+    });
+
+    const state = useChatStore.getState();
+    // Promoted into the transcript and cleared from both queue lists.
+    expect(state.pendingUserMessages).toEqual([]);
+    expect(state.heldMessages).toEqual([]);
+  });
+
+  it("auto-sends held messages when the agent goes idle (never manually steered)", async () => {
+    // The reported bug: a message queued but left alone must still send once
+    // the turn it was waiting behind completes — otherwise it's stranded.
+    useChatStore.setState({
+      conversationId: "conv_existing",
+      abortController: new AbortController(),
+      status: "streaming",
+      sessionStatus: "running",
+      activeResponse: { responseId: "resp_1", state: "streaming", error: null },
+    });
+    useChatStore.getState().holdMessage("auto send me", "agent_xyz");
+    useChatStore.getState().holdMessage("and me too", "agent_xyz");
+    expect(useChatStore.getState().heldMessages).toHaveLength(2);
+    // No POST while the agent is busy — they're purely client-side so far.
+    expect(
+      fetchMock.mock.calls.filter(([u]) =>
+        String(u).endsWith("/v1/sessions/conv_existing/events"),
+      ),
+    ).toHaveLength(0);
+
+    // The turn completes → session goes idle.
+    handleSessionEvent({
+      type: "session_status",
+      conversationId: "conv_existing",
+      status: "idle",
+      responseId: "resp_1",
+    });
+    await tick();
+
+    // Held queue drained: both messages POSTed in FIFO order.
+    expect(useChatStore.getState().heldMessages).toEqual([]);
+    const events = fetchMock.mock.calls.filter(([u]) =>
+      String(u).endsWith("/v1/sessions/conv_existing/events"),
+    );
+    expect(events).toHaveLength(2);
+    const texts = events.map(
+      ([, init]) => JSON.parse((init as RequestInit).body as string).data.content[0].text,
+    );
+    expect(texts).toEqual(["auto send me", "and me too"]);
+  });
+
+  it("does not auto-send held messages while the agent is still busy", () => {
+    // A running/waiting status tick must NOT drain the queue — only a true
+    // idle does. (Guards against flushing mid-turn on an interim status.)
+    useChatStore.setState({
+      conversationId: "conv_existing",
+      abortController: new AbortController(),
+      status: "streaming",
+      sessionStatus: "running",
+      activeResponse: { responseId: "resp_1", state: "streaming", error: null },
+    });
+    useChatStore.getState().holdMessage("stay held", "agent_xyz");
+
+    handleSessionEvent({
+      type: "session_status",
+      conversationId: "conv_existing",
+      status: "waiting",
+      responseId: "resp_1",
+    });
+
+    expect(useChatStore.getState().heldMessages).toHaveLength(1);
+    expect(
+      fetchMock.mock.calls.filter(([u]) =>
+        String(u).endsWith("/v1/sessions/conv_existing/events"),
+      ),
+    ).toHaveLength(0);
   });
 });
 
