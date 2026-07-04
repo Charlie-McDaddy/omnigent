@@ -42,6 +42,42 @@ logger = logging.getLogger("omnigent.deploy.vercel")
 _STARTING_BODY = b'{"detail": "server starting (running database migrations); retry shortly"}'
 _FAILED_BODY = b'{"detail": "server failed to boot; see the deployment logs"}'
 
+# Browsers get an auto-refreshing page instead of raw JSON: a cold Vercel
+# instance answers 503 for its ~15 s boot, and without this a user landing
+# in that window sees a bare JSON blob and thinks the app is down.
+_STARTING_HTML = b"""<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="refresh" content="3" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Omnigent is starting\xe2\x80\xa6</title>
+    <style>
+      body { font-family: system-ui, sans-serif; background: #0d1218; color: #e6e8eb;
+             display: flex; align-items: center; justify-content: center;
+             height: 100vh; margin: 0; }
+      main { text-align: center; }
+      .spin { width: 28px; height: 28px; margin: 0 auto 16px;
+              border: 3px solid #2a3442; border-top-color: #e6e8eb;
+              border-radius: 50%; animation: r 0.9s linear infinite; }
+      @keyframes r { to { transform: rotate(360deg); } }
+      p { color: #8b949e; font-size: 14px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="spin"></div>
+      <h1>Omnigent is starting</h1>
+      <p>This instance is booting (a few seconds). The page retries automatically.</p>
+    </main>
+  </body>
+</html>
+"""
+_FAILED_HTML = (
+    b"<!doctype html><html><body><h1>Omnigent failed to start</h1>"
+    b"<p>See the deployment logs.</p></body></html>"
+)
+
 
 def _log_fatal(prefix: str) -> None:
     """Log the current exception on one line.
@@ -86,10 +122,20 @@ class _DeferredApp:
             await self._real_app(scope, receive, send)
             return
         status = 500 if self._boot_failed else 503
-        body = _FAILED_BODY if self._boot_failed else _STARTING_BODY
+        # Content-negotiate: browsers (Accept: text/html) get an
+        # auto-refreshing page; API/tunnel clients get JSON.
+        accepts_html = b"text/html" in dict(scope.get("headers") or []).get(b"accept", b"")
+        if accepts_html and scope["type"] == "http":
+            body = _FAILED_HTML if self._boot_failed else _STARTING_HTML
+            content_type = b"text/html; charset=utf-8"
+        else:
+            body = _FAILED_BODY if self._boot_failed else _STARTING_BODY
+            content_type = b"application/json"
         headers = [
-            (b"content-type", b"application/json"),
+            (b"content-type", content_type),
             (b"retry-after", b"5"),
+            # Never cache the boot-window response in browsers or the edge.
+            (b"cache-control", b"no-store"),
         ]
         if scope["type"] == "websocket":
             # Refuse the upgrade with a retryable 5xx where the server

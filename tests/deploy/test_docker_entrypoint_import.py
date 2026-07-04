@@ -257,9 +257,23 @@ def _run_shim(app, scope: dict, received: list[dict]) -> list[dict]:
 def test_vercel_shim_serves_503_while_booting(_vercel_entrypoint) -> None:
     app = _vercel_entrypoint._DeferredApp(resolved_config=None)
     app._boot_failed = False  # still booting, not failed
-    sent = _run_shim(app, {"type": "http"}, [])
+    sent = _run_shim(app, {"type": "http", "headers": []}, [])
     assert sent[0]["status"] == 503
     assert (b"retry-after", b"5") in sent[0]["headers"]
+    assert (b"content-type", b"application/json") in sent[0]["headers"]
+
+
+def test_vercel_shim_serves_html_retry_page_to_browsers(_vercel_entrypoint) -> None:
+    # A browser landing in the boot window must get an auto-refreshing page,
+    # not a raw JSON blob that reads as "the app is down".
+    app = _vercel_entrypoint._DeferredApp(resolved_config=None)
+    app._boot_failed = False
+    scope = {"type": "http", "headers": [(b"accept", b"text/html,application/xhtml+xml")]}
+    sent = _run_shim(app, scope, [])
+    assert sent[0]["status"] == 503
+    assert (b"content-type", b"text/html; charset=utf-8") in sent[0]["headers"]
+    assert (b"cache-control", b"no-store") in sent[0]["headers"]
+    assert b'http-equiv="refresh"' in sent[1]["body"]
 
 
 def test_vercel_shim_denies_websocket_with_retryable_503(_vercel_entrypoint) -> None:
@@ -269,11 +283,10 @@ def test_vercel_shim_denies_websocket_with_retryable_503(_vercel_entrypoint) -> 
     app._boot_failed = False
     scope = {"type": "websocket", "extensions": {"websocket.http.response": {}}}
     sent = _run_shim(app, scope, [{"type": "websocket.connect"}])
-    assert sent[0] == {
-        "type": "websocket.http.response.start",
-        "status": 503,
-        "headers": [(b"content-type", b"application/json"), (b"retry-after", b"5")],
-    }
+    assert sent[0]["type"] == "websocket.http.response.start"
+    assert sent[0]["status"] == 503
+    assert (b"content-type", b"application/json") in sent[0]["headers"]
+    assert (b"retry-after", b"5") in sent[0]["headers"]
     assert sent[1]["type"] == "websocket.http.response.body"
 
 
