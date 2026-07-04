@@ -32,13 +32,15 @@ after deploy by setting the `OMNIGENT_OIDC_*` vars (auth stays enabled; the
 issuer is what flips the mode); see the platform README for both
 walkthroughs.
 
-**Three more platforms** are supported with a little more setup (not a single
+**Four more platforms** are supported with a little more setup (not a single
 button): **Fly.io** (`fly deploy`, or its web-UI Launch), **Hugging Face
-Spaces** (a demo-grade Docker Space), and **Modal** (`modal deploy`, an
-always-on web server with a durable artifact Volume). See the menu below.
-Fly and HF Spaces can run on the **SQLite lite tier** with no database to
-provision (see [Database: Postgres or SQLite](#database-postgres-or-sqlite));
-Modal needs a bring-your-own Postgres.
+Spaces** (a demo-grade Docker Space), **Modal** (`modal deploy`, an
+always-on web server with a durable artifact Volume), and **Vercel**
+(`vercel deploy`, a container function on Fluid compute with Neon Postgres).
+See the menu below. Fly and HF Spaces can run on the **SQLite lite tier**
+with no database to provision (see
+[Database: Postgres or SQLite](#database-postgres-or-sqlite)); Modal and
+Vercel need a bring-your-own Postgres (one marketplace command on Vercel).
 
 ---
 
@@ -69,6 +71,10 @@ deploy/
 │   ├── src/index.js      the Worker that fronts the container
 │   ├── wrangler.jsonc
 │   └── README.md
+│
+├── vercel/            ← Vercel container function (Fluid compute, Neon Postgres;
+│   └── README.md         tunnels reconnect at the function duration cap.
+│                         The Dockerfile.vercel shim lives at the repo root.)
 │
 ├── trycloudflare/     ← Cloudflare quick tunnel (public URL for a LOCAL server)
 │   └── README.md
@@ -115,6 +121,7 @@ deploy/
 | Deploy to Fly.io | Fly | [`fly/README.md`](fly/README.md): `fly deploy`, SQLite on a volume |
 | Deploy to Modal (durable artifact Volume) | Modal | [`modal/README.md`](modal/README.md): `modal deploy`, BYO Neon Postgres |
 | Deploy serverless (scale-to-zero, no VM/Postgres to manage) | Cloudflare Containers + D1 + R2 | [`cloudflare/README.md`](cloudflare/README.md): `wrangler deploy` |
+| Deploy on Vercel (container function + Neon Postgres) | Vercel | [`vercel/README.md`](vercel/README.md): `vercel deploy`; tunnels reconnect at the duration cap |
 | Stand up a quick demo (no DB to provision) | HF Spaces | [`hf-spaces/README.md`](hf-spaces/README.md): Docker Space, SQLite |
 | Share a server running on your **laptop**: demo it to teammates, or let remote runners & cloud sandboxes connect back to it (nothing to deploy) | Cloudflare quick tunnel | `cloudflared tunnel --url http://localhost:6767` |
 | Access your server privately from **your phone, tablet, or other personal devices** without exposing it to the internet | Tailscale | [`tailscale/README.md`](tailscale/README.md): `tailscale serve https / http://localhost:8000` |
@@ -362,8 +369,8 @@ guide lives at [`daytona/README.md`](daytona/README.md); the Islo guide
 Auth is driven by a single switch, `OMNIGENT_AUTH_ENABLED`. The framework
 default (a bare local `omnigent server`) leaves it off: single-user
 `header` mode, no login. The containerized deploys here (Docker / HF / Render /
-Railway / Modal / Fly) set `OMNIGENT_AUTH_ENABLED=1` by default in their
-entrypoints,
+Railway / Modal / Fly / Vercel) set `OMNIGENT_AUTH_ENABLED=1` by default in
+their entrypoints,
 since a network-exposed instance should be authenticated. With the switch on,
 the mode is chosen by your config: supply the `OMNIGENT_OIDC_*` vars and you
 get `oidc`, otherwise you get the built-in `accounts` flow.

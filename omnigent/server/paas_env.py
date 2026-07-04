@@ -80,6 +80,8 @@ def detect_base_url(
     - Fly.io: ``FLY_APP_NAME`` (→ ``https://<app>.fly.dev``).
     - Hugging Face Spaces: ``SPACE_HOST`` (host only, e.g.
       ``"user-space.hf.space"``).
+    - Vercel: ``VERCEL_PROJECT_PRODUCTION_URL`` (host only; the stable
+      production domain), falling back to the per-deployment ``VERCEL_URL``.
 
     :param environ: The process environment, e.g. ``os.environ``.
     :param host: The resolved bind host, used only for the local fallback,
@@ -101,4 +103,9 @@ def detect_base_url(
     hf_host = environ.get("SPACE_HOST")
     if hf_host:
         return f"https://{hf_host}"
+    # Prefer the stable production domain over the per-deployment URL so
+    # cookies / magic links keep working across redeploys.
+    vercel_host = environ.get("VERCEL_PROJECT_PRODUCTION_URL") or environ.get("VERCEL_URL")
+    if vercel_host:
+        return f"https://{vercel_host}"
     return f"http://{host}:{port}"

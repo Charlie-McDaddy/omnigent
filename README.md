@@ -287,7 +287,8 @@ with your laptop.
 
 One `docker compose up` runs the server on any host you have (a VPS, a home
 server); **Render** and **Railway** deploy with one click; **Fly.io**, **Hugging
-Face Spaces**, **Modal**, **Cloudflare** (serverless, scale-to-zero), and
+Face Spaces**, **Modal**, **Cloudflare** (serverless, scale-to-zero), **Vercel**
+(container function + Neon Postgres), and
 **Databricks Apps** (backed by Lakebase Postgres and Unity Catalog Volumes) are
 covered too — and a **Cloudflare quick tunnel** (public) or **Tailscale**
 (private) reaches a server running on your own laptop without a deploy. The

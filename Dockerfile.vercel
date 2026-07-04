@@ -1,0 +1,12 @@
+# Vercel container deploy: pulls the CI-built server image instead of building
+# from source — the web UI bundle is gitignored, so a source build here would
+# ship without it. Vercel auto-detects `Dockerfile.vercel` at the repo root and
+# routes all traffic to the container. Walkthrough: deploy/vercel/README.md.
+# Pin a release by editing the tag (…/omnigent-server:vX.Y.Z).
+
+FROM ghcr.io/omnigent-ai/omnigent-server:latest
+
+# Vercel routes traffic to the port named by the PORT env var, defaulting to
+# 80. The entrypoint binds $PORT, so this default makes a zero-config deploy
+# line up; a PORT project env var in Vercel overrides it at runtime.
+ENV PORT=80

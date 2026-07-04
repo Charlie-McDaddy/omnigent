@@ -70,6 +70,21 @@ def test_resolve_bind_host(configured_host: str | None, environ: dict[str, str],
         ),
         # Precedence: Fly beats HF when only those two are set.
         ({"FLY_APP_NAME": "myapp", "SPACE_HOST": "user-space.hf.space"}, "https://myapp.fly.dev"),
+        # Vercel: the stable production domain wins over the per-deployment URL.
+        (
+            {
+                "VERCEL_PROJECT_PRODUCTION_URL": "myapp.vercel.app",
+                "VERCEL_URL": "myapp-abc123.vercel.app",
+            },
+            "https://myapp.vercel.app",
+        ),
+        # Vercel: per-deployment URL is the fallback (preview deploys).
+        ({"VERCEL_URL": "myapp-abc123.vercel.app"}, "https://myapp-abc123.vercel.app"),
+        # Precedence: HF beats Vercel when both are set.
+        (
+            {"SPACE_HOST": "user-space.hf.space", "VERCEL_URL": "myapp-abc123.vercel.app"},
+            "https://user-space.hf.space",
+        ),
         # No provider var → local fallback to the bind address.
         ({}, "http://0.0.0.0:8000"),
     ],
