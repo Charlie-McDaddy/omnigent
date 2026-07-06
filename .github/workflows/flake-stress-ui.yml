@@ -190,20 +190,33 @@ jobs:
           sudo apt-get install -y bubblewrap tmux
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
+      # Cache the compiled binary across PRs (mirrors e2e-ui.yml / ci.yml).
+      - name: Cache sidecar binary
+        id: sidecar-cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v4
+        with:
+          path: .tmp-codex-parity-target/debug/codex-parity-sidecar
+          key: codex-parity-sidecar-bin-${{ runner.os }}-${{ hashFiles('tests/codex_parity/sidecar/Cargo.lock', 'tests/codex_parity/sidecar/Cargo.toml', 'tests/codex_parity/sidecar/src/main.rs') }}
+
       - name: Set up Rust toolchain
-        # The mocked_native_codex_goal_session fixture builds the Codex parity
-        # sidecar via `cargo build`; pin the toolchain for a stable cache key
-        # (mirrors e2e-ui.yml / ci.yml's codex-parity job).
+        if: steps.sidecar-cache.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
         with:
           toolchain: stable
 
-      - name: Cache Rust build
+      - name: Cache Rust build artifacts
+        if: steps.sidecar-cache.outputs.cache-hit != 'true'
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v4
         with:
           path: .tmp-codex-parity-target
-          # Identical key to e2e-ui.yml / ci.yml so a populated cache restores.
           key: codex-parity-sidecar-${{ runner.os }}-${{ hashFiles('tests/codex_parity/sidecar/Cargo.lock') }}
+
+      - name: Build parity sidecar
+        if: steps.sidecar-cache.outputs.cache-hit != 'true'
+        run: |
+          cargo build \
+            --manifest-path tests/codex_parity/sidecar/Cargo.toml \
+            --target-dir .tmp-codex-parity-target
 
       - name: Cache Playwright browsers
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v5.0.5
@@ -258,6 +271,7 @@ jobs:
         env:
           TEST_TARGET: ${{ github.event.inputs.test_target }}
           EXTRA_ARGS: ${{ github.event.inputs.extra_pytest_args }}
+          CODEX_PARITY_SIDECAR_BIN: ${{ github.workspace }}/.tmp-codex-parity-target/debug/codex-parity-sidecar
         run: |
           mkdir -p artifacts "artifacts/basetemp-${{ matrix.attempt }}"
           # shellcheck disable=SC2086

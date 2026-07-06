@@ -107,20 +107,27 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           ref: ${{ github.event.inputs.branch || github.ref }}
+      # Cache the compiled binary across PRs. Key on sidecar source + lock so
+      # any PR that hasn't touched the sidecar skips the entire Rust build.
+      - name: Cache sidecar binary
+        id: sidecar-cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v4
+        with:
+          path: .tmp-codex-parity-target/debug/codex-parity-sidecar
+          key: codex-parity-sidecar-bin-${{ runner.os }}-${{ hashFiles('tests/codex_parity/sidecar/Cargo.lock', 'tests/codex_parity/sidecar/Cargo.toml', 'tests/codex_parity/sidecar/src/main.rs') }}
       - name: Set up Rust toolchain
+        if: steps.sidecar-cache.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable
         with:
           toolchain: stable
-      # Pin the toolchain for a stable cache fingerprint, key on the sidecar
-      # Cargo.lock. A warm hit reuses every dep and only relinks the workspace
-      # crate (~40s); a cold miss is the full ~7min compile (rare -- the lock
-      # is near-static). Same key as ci.yml's codex-parity job, so they share.
-      - name: Cache Rust build
+      - name: Cache Rust build artifacts
+        if: steps.sidecar-cache.outputs.cache-hit != 'true'
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae  # v4
         with:
           path: .tmp-codex-parity-target
           key: codex-parity-sidecar-${{ runner.os }}-${{ hashFiles('tests/codex_parity/sidecar/Cargo.lock') }}
       - name: Build parity sidecar
+        if: steps.sidecar-cache.outputs.cache-hit != 'true'
         run: |
           cargo build \
             --manifest-path tests/codex_parity/sidecar/Cargo.toml \
