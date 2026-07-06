@@ -9,7 +9,7 @@ hash so repeated ``llm_request`` round-trips within a turn pay
 for only one classifier call. See
 ``examples/server_config_deny_trivial_opus.yaml`` for usage.
 
-:func:`intent_gate` implements intent-based permissioning: it records
+:func:`intent_based_authorization` implements intent-based permissioning: it records
 the user's first message as the authoritative intent for the session,
 then gates every subsequent ``tool_call`` against that intent using the
 server-level LLM client.  Tool calls that cannot plausibly serve the
@@ -236,14 +236,14 @@ def deny_trivial_to_expensive_model(
     return evaluate  # type: ignore[return-value]
 
 
-# ── intent_gate ───────────────────────────────────────────────────────────────
+# ── intent_based_authorization ───────────────────────────────────────────────────────────────
 
 # Session-state key that stores the user's original intent (first message).
-_INTENT_KEY = "_intent_gate_intent"
+_INTENT_KEY = "_intent_based_authorization_intent"
 
 # Session-state key prefix for per-tool-call verdict cache.
-# Full key: ``_intent_gate_check:<hex16-of-intent+tool+args>``.
-_INTENT_CHECK_PREFIX = "_intent_gate_check:"
+# Full key: ``_intent_based_authorization_check:<hex16-of-intent+tool+args>``.
+_INTENT_CHECK_PREFIX = "_intent_based_authorization_check:"
 
 
 def _off_task_reason(tool_name: str, intent: str) -> str:
@@ -290,7 +290,7 @@ _INTENT_CHECK_SCHEMA: dict[str, Any] = {
 }
 
 
-def intent_gate() -> PolicyCallable:
+def intent_based_authorization() -> PolicyCallable:
     """Factory: enforce intent-based permissioning across the session.
 
     Implements a two-phase policy:
@@ -330,12 +330,12 @@ def intent_gate() -> PolicyCallable:
     YAML usage::
 
         policies:
-          intent_gate:
+          intent_based_authorization:
             type: function
             function:
-              path: omnigent.policies.builtins.routing.intent_gate
+              path: omnigent.policies.builtins.routing.intent_based_authorization
     """
-    # intent_gate takes no required arguments — it is a zero-config factory.
+    # intent_based_authorization takes no required arguments — it is a zero-config factory.
     # The inner evaluate() closes over nothing from the outer scope except
     # the classification prompt; we define it as a nested async function.
 
@@ -402,7 +402,7 @@ def intent_gate() -> PolicyCallable:
         llm_client = event.get("llm_client")
         if llm_client is None:
             _log.warning(
-                "intent_gate: event['llm_client'] is None — server has no llm: config. Abstaining."
+                "intent_based_authorization: event['llm_client'] is None — server has no llm: config. Abstaining."
             )
             return None
 
@@ -428,14 +428,14 @@ def intent_gate() -> PolicyCallable:
                 return None
             verdict_obj = json.loads(raw_text)
         except Exception:  # noqa: BLE001 — fail-open on LLM/JSON errors
-            _log.exception("intent_gate: classification call failed")
+            _log.exception("intent_based_authorization: classification call failed")
             return None
 
         verdict = verdict_obj.get("verdict", "") if isinstance(verdict_obj, dict) else ""
 
         if verdict == "OFF_TASK":
             _log.info(
-                "intent_gate: OFF_TASK — asking about tool_call %s (intent: %.80s…)",
+                "intent_based_authorization: OFF_TASK — asking about tool_call %s (intent: %.80s…)",
                 tool_name,
                 intent,
             )
@@ -496,7 +496,7 @@ POLICY_REGISTRY: list[dict[str, Any]] = [
         },
     },
     {
-        "handler": "omnigent.policies.builtins.routing.intent_gate",
+        "handler": "omnigent.policies.builtins.routing.intent_based_authorization",
         "kind": "factory",
         "name": "Intent Gate",
         "description": (
