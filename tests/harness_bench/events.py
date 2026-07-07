@@ -34,10 +34,15 @@ class HarnessStarted:
 
 @dataclass(frozen=True)
 class HarnessSkipped:
-    """A harness was skipped whole (unavailable, or provisioning failed)."""
+    """A harness was skipped whole (unavailable, or provisioning failed).
+
+    ``transport`` is the resolved transport the skip applies to (``None`` when
+    it could not be resolved), so a live row can still be labelled with it.
+    """
 
     harness: str
     reason: str
+    transport: str | None = None
 
 
 @dataclass(frozen=True)

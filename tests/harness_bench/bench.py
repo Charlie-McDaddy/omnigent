@@ -29,7 +29,7 @@ from tests.harness_bench.events import (
 from tests.harness_bench.full_server import SharedFullServer
 from tests.harness_bench.probes import ALL_PROBES, CapabilityProbe
 from tests.harness_bench.profile import BenchProfile
-from tests.harness_bench.transport import resolve_driver_class
+from tests.harness_bench.transport import resolve_driver_class, resolve_transport_name
 from tests.harness_bench.verdict import Applicability, Priority, ProbeResult, Verdict, reconcile
 
 _logger = logging.getLogger(__name__)
@@ -71,11 +71,18 @@ class CellResult:
 
 @dataclass(frozen=True)
 class HarnessReport:
-    """Every cell for one harness, plus a whole-harness skip reason."""
+    """Every cell for one harness, plus a whole-harness skip reason.
+
+    :param transport: The transport that actually ran this harness (the
+        *resolved* driver, e.g. ``full-server`` for an SDK harness on the
+        default), which can differ from ``profile.transport`` — that field is
+        the harness *family* marker, not the effective driver.
+    """
 
     profile: BenchProfile
     cells: list[CellResult]
     skipped_reason: str | None = None
+    transport: str | None = None
 
     @property
     def has_drift(self) -> bool:
@@ -126,6 +133,7 @@ def _uniform_report(
     observed: ProbeResult,
     *,
     skipped_reason: str | None = None,
+    transport: str | None = None,
 ) -> HarnessReport:
     """A report where every applicable probe shares one *observed* result.
 
@@ -141,7 +149,9 @@ def _uniform_report(
         )
         for probe in probes
     ]
-    return HarnessReport(profile=profile, cells=cells, skipped_reason=skipped_reason)
+    return HarnessReport(
+        profile=profile, cells=cells, skipped_reason=skipped_reason, transport=transport
+    )
 
 
 def _as_sink(progress: Progress | ProgressSink | None) -> ProgressSink | None:
@@ -199,14 +209,24 @@ async def run_harness(
     sink = _as_sink(progress)
 
     if not live:
-        return _uniform_report(profile, probes, ProbeResult.skipped("offline (declared shown)"))
+        # Offline: still resolve the transport a live run *would* pick, so the
+        # declared matrix labels each row with its effective transport.
+        resolved = resolve_transport_name(profile, override=transport, fast=fast)
+        return _uniform_report(
+            profile, probes, ProbeResult.skipped("offline (declared shown)"), transport=resolved
+        )
 
     driver_cls = resolve_driver_class(profile, override=transport, fast=fast)
+    resolved_transport = driver_cls.transport
     unavailable = driver_cls.unavailable(profile, databricks_profile=databricks_profile)
     if unavailable is not None:
-        _emit(sink, HarnessSkipped(profile.harness, unavailable))
+        _emit(sink, HarnessSkipped(profile.harness, unavailable, resolved_transport))
         return _uniform_report(
-            profile, probes, ProbeResult.skipped(unavailable), skipped_reason=unavailable
+            profile,
+            probes,
+            ProbeResult.skipped(unavailable),
+            skipped_reason=unavailable,
+            transport=resolved_transport,
         )
 
     assert databricks_profile is not None  # guaranteed by the unavailable() check
@@ -244,8 +264,14 @@ async def run_harness(
         with contextlib.suppress(Exception):
             await driver_cm.__aexit__(type(exc), exc, exc.__traceback__)
         reason = f"provisioning failed: {exc}"
-        _emit(sink, HarnessSkipped(profile.harness, reason))
-        return _uniform_report(profile, probes, ProbeResult.skipped(reason), skipped_reason=reason)
+        _emit(sink, HarnessSkipped(profile.harness, reason, resolved_transport))
+        return _uniform_report(
+            profile,
+            probes,
+            ProbeResult.skipped(reason),
+            skipped_reason=reason,
+            transport=resolved_transport,
+        )
     try:
         driver = entered
         prereq_skip: str | None = None
@@ -276,7 +302,7 @@ async def run_harness(
     finally:
         await driver_cm.__aexit__(None, None, None)
     _emit(sink, HarnessFinished(profile.harness))
-    return HarnessReport(profile=profile, cells=cells)
+    return HarnessReport(profile=profile, cells=cells, transport=resolved_transport)
 
 
 async def run_bench(

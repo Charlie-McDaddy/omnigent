@@ -148,9 +148,17 @@ async def test_offline_render_produces_matrix() -> None:
     assert "Harness capability matrix" in md
     for profile in _OFFICIAL:
         assert profile.harness in md
-    # JSON is well-formed and carries every harness.
+    # The harness column is labelled with the *resolved* transport: an SDK
+    # harness shows its full-server default (not the sdk-inproc family marker),
+    # a native shows the short `native` label.
+    assert "`claude-sdk [full-server]`" in md
+    assert "`claude-native [native]`" in md
+    # JSON is well-formed and carries every harness, plus the resolved transport.
     payload = json.loads(render_json(matrix))
     assert {h["harness"] for h in payload["harnesses"]} == {p.harness for p in _OFFICIAL}
+    by_harness = {h["harness"]: h for h in payload["harnesses"]}
+    assert by_harness["claude-sdk"]["resolved_transport"] == "full-server"
+    assert by_harness["claude-native"]["resolved_transport"] == "native-tui"
 
 
 # ── Progress events / rich / parallel / report (offline) ─────────

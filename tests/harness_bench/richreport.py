@@ -37,6 +37,10 @@ _VERDICT_GLYPH: dict[Verdict, str] = {
 _PENDING = "[dim]·[/dim]"
 _RUNNING = "[cyan]…[/cyan]"
 
+# Short transport labels for the harness column (native-tui → native), matching
+# the static report renderer.
+_TRANSPORT_LABEL = {"native-tui": "native"}
+
 
 def rich_sink_or_none(*, force: bool = False):
     """Return a rich live sink, or ``None`` if rich/TTY is unavailable.
@@ -72,6 +76,7 @@ class _RichLiveSink:
         # harness → {dim_title: markup}; insertion order = display order.
         self._rows: dict[str, dict[str, str]] = {}
         self._notes: dict[str, str] = {}
+        self._transport: dict[str, str] = {}  # harness → resolved transport label
         self._live = Live(self._render(), console=console, refresh_per_second=8)
         self._live.start()
 
@@ -87,17 +92,25 @@ class _RichLiveSink:
             table.add_column(dim, justify="center")
         for harness, cells in self._rows.items():
             note = self._notes.get(harness)
-            label = f"{harness}" + (f"  [dim]({note})[/dim]" if note else "")
+            transport = self._transport.get(harness)
+            label = harness
+            if transport:
+                label += f" [dim]\\[{_TRANSPORT_LABEL.get(transport, transport)}][/dim]"
+            if note:
+                label += f"  [dim]({note})[/dim]"
             table.add_row(label, *(cells[dim] for dim in self._dimensions))
         return table
 
     def emit(self, event: BenchEvent) -> None:
         if isinstance(event, HarnessStarted):
             self._rows.setdefault(event.harness, self._blank_row())
+            self._transport[event.harness] = event.transport
         elif isinstance(event, HarnessSkipped):
             self._rows.setdefault(event.harness, self._blank_row())
             # A whole-harness skip: every dimension is ·, reason on the label.
             self._notes[event.harness] = event.reason.split(";")[0][:60]
+            if event.transport:
+                self._transport[event.harness] = event.transport
         elif isinstance(event, ProbeStarted):
             row = self._rows.setdefault(event.harness, self._blank_row())
             row[self._dim_by_name.get(event.probe, event.title)] = _RUNNING
