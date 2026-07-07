@@ -34,6 +34,14 @@ const SLASH_NAV_DOWN: KeyBinding = { mod: "forbidden", alt: "forbidden", key: "A
 const SLASH_APPLY: KeyBinding = { mod: "forbidden", alt: "forbidden", key: "Tab" };
 const SLASH_DISMISS: KeyBinding = { mod: "forbidden", alt: "forbidden", key: "Escape" };
 
+// Mention menu: match key identity regardless of held modifiers (pre-registry
+// behavior). While the menu is open these keys must still consume modified
+// chords so global hotkeys (e.g. Cmd+Arrow session switch) do not fire through.
+const MENTION_NAV_UP: KeyBinding = { key: "ArrowUp" };
+const MENTION_NAV_DOWN: KeyBinding = { key: "ArrowDown" };
+const MENTION_APPLY: KeyBinding = { key: "Tab" };
+const MENTION_DISMISS: KeyBinding = { key: "Escape" };
+
 const GROUP_TITLES: Record<KeymapGroupId, string> = {
   general: "General",
   "in-chats": "In chats",
@@ -53,7 +61,13 @@ export const KEYMAP_COMMANDS: Record<KeymapCommandId, KeymapCommand> = {
     label: "Open command palette",
     group: "general",
     scope: "global",
-    defaultBinding: { mod: "required", alt: "forbidden", shift: "forbidden", key: "k" },
+    defaultBinding: {
+      mod: "required",
+      alt: "forbidden",
+      shift: "forbidden",
+      key: "k",
+      rejectAltGraph: true,
+    },
     displayKeys: (ctx) => [ctx.modKey, "K"],
   },
   "show-keyboard-shortcuts": {
@@ -231,7 +245,7 @@ export const KEYMAP_COMMANDS: Record<KeymapCommandId, KeymapCommand> = {
     label: "Navigate suggestions",
     group: "slash-commands",
     scope: "mention-menu",
-    defaultBinding: SLASH_NAV_UP,
+    defaultBinding: MENTION_NAV_UP,
     displayKeys: () => [],
   },
   "mention-navigate-down": {
@@ -239,7 +253,7 @@ export const KEYMAP_COMMANDS: Record<KeymapCommandId, KeymapCommand> = {
     label: "Navigate suggestions",
     group: "slash-commands",
     scope: "mention-menu",
-    defaultBinding: SLASH_NAV_DOWN,
+    defaultBinding: MENTION_NAV_DOWN,
     displayKeys: () => [],
   },
   "mention-apply": {
@@ -247,7 +261,7 @@ export const KEYMAP_COMMANDS: Record<KeymapCommandId, KeymapCommand> = {
     label: "Apply highlighted command",
     group: "slash-commands",
     scope: "mention-menu",
-    defaultBinding: SLASH_APPLY,
+    defaultBinding: MENTION_APPLY,
     displayKeys: () => [],
   },
   "mention-dismiss": {
@@ -255,7 +269,7 @@ export const KEYMAP_COMMANDS: Record<KeymapCommandId, KeymapCommand> = {
     label: "Dismiss menu",
     group: "slash-commands",
     scope: "mention-menu",
-    defaultBinding: SLASH_DISMISS,
+    defaultBinding: MENTION_DISMISS,
     displayKeys: () => [],
   },
 };

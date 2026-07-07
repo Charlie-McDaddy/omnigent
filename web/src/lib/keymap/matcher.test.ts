@@ -62,6 +62,37 @@ describe("matchesBinding", () => {
     ).toBe(false);
     altGraph.mockRestore();
   });
+
+  it("rejects AltGraph for command palette even without alt required", () => {
+    const binding = getEffectiveBinding("command-palette");
+    const altGraph = vi
+      .spyOn(KeyboardEvent.prototype, "getModifierState")
+      .mockImplementation((keyArg) => keyArg === "AltGraph");
+    expect(matchesBinding(keydown({ key: "k", ctrlKey: true }), binding)).toBe(false);
+    altGraph.mockRestore();
+  });
+});
+
+describe("mention-menu bindings", () => {
+  it("match modified arrow keys (modifier-agnostic)", () => {
+    expect(matchesCommand("mention-navigate-down", keydown({ key: "ArrowDown" }))).toBe(true);
+    expect(
+      matchesCommand("mention-navigate-down", keydown({ key: "ArrowDown", metaKey: true })),
+    ).toBe(true);
+    expect(
+      matchesCommand(
+        "mention-navigate-up",
+        keydown({ key: "ArrowUp", ctrlKey: true, altKey: true }),
+      ),
+    ).toBe(true);
+  });
+
+  it("still forbids modifiers for slash-menu defaults", () => {
+    expect(matchesCommand("slash-navigate-down", keydown({ key: "ArrowDown" }))).toBe(true);
+    expect(
+      matchesCommand("slash-navigate-down", keydown({ key: "ArrowDown", metaKey: true })),
+    ).toBe(false);
+  });
 });
 
 describe("matchesCommand", () => {

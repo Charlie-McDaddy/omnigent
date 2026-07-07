@@ -38,6 +38,8 @@ function matchesKeyField(e: KeymapKeyEvent, binding: KeyBinding): boolean {
     binding.codes !== undefined;
   if (!hasKeyConstraint) return false;
 
+  // OR semantics: any one populated key field may match. No current command
+  // combines fields; overrides that do would match more broadly than expected.
   if (binding.key !== undefined && letterMatches(e.key, binding.key)) return true;
   if (binding.code !== undefined && e.code === binding.code) return true;
   if (binding.keys?.some((k) => letterMatches(e.key, k))) return true;
@@ -56,7 +58,6 @@ export function matchesBinding(e: KeymapKeyEvent, binding: KeyBinding): boolean 
 
   if (
     binding.rejectAltGraph &&
-    binding.alt === "required" &&
     typeof e.getModifierState === "function" &&
     e.getModifierState("AltGraph")
   ) {

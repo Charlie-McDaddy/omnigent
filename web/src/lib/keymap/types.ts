@@ -21,7 +21,7 @@ export interface KeyBinding {
   code?: string;
   keys?: readonly string[];
   codes?: readonly string[];
-  /** When alt is required, ignore AltGr (Ctrl+Alt on intl layouts). */
+  /** When set, reject AltGr even if alt is not required (intl layout guard). */
   rejectAltGraph?: boolean;
 }
 

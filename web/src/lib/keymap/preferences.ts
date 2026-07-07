@@ -1,8 +1,9 @@
 // Persisted user overrides for keyboard shortcuts (`omnigent:keymap`).
 //
-// Overrides are a partial map of command id → binding, merged over the
-// registry defaults at read time. PR 1 stores the shape only; the settings
-// editor (PR 2) writes here.
+// Overrides are a partial map of command id → binding. At read time each
+// stored binding fully *replaces* the registry default (no field-level merge).
+// Platform-paired defaults (e.g. jump-pinned-session) collapse to a single
+// override binding — the PR 2 editor must account for that when remapping.
 
 import type { KeyBinding, KeymapCommandId, PlatformKeyBinding } from "./types";
 import { KEYMAP_COMMANDS, resolveCommandDefaultBinding } from "./registry";
@@ -10,6 +11,14 @@ import { KEYMAP_COMMANDS, resolveCommandDefaultBinding } from "./registry";
 const STORAGE_KEY = "omnigent:keymap";
 
 export type KeymapOverrides = Partial<Record<KeymapCommandId, KeyBinding>>;
+
+let cachedOverrides: KeymapOverrides | null = null;
+let cachedRaw: string | null | undefined;
+
+function invalidateOverrideCache(): void {
+  cachedOverrides = null;
+  cachedRaw = undefined;
+}
 
 function isModifierRequirement(value: unknown): value is KeyBinding["mod"] {
   return value === "required" || value === "forbidden" || value === "any";
@@ -69,17 +78,31 @@ function readRawOverrides(): KeymapOverrides {
   if (typeof window === "undefined") return {};
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
+    if (raw === cachedRaw && cachedOverrides !== null) {
+      return cachedOverrides;
+    }
+    if (!raw) {
+      cachedRaw = raw;
+      cachedOverrides = {};
+      return cachedOverrides;
+    }
     const parsed: unknown = JSON.parse(raw);
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      cachedRaw = raw;
+      cachedOverrides = {};
+      return cachedOverrides;
+    }
     const out: KeymapOverrides = {};
     for (const [id, value] of Object.entries(parsed as Record<string, unknown>)) {
-      if (!(id in KEYMAP_COMMANDS)) continue;
+      if (!Object.hasOwn(KEYMAP_COMMANDS, id)) continue;
       const binding = coerceBinding(value);
       if (binding) out[id as KeymapCommandId] = binding;
     }
+    cachedRaw = raw;
+    cachedOverrides = out;
     return out;
   } catch {
+    invalidateOverrideCache();
     return {};
   }
 }
@@ -105,9 +128,11 @@ export function writeKeymapOverride(id: KeymapCommandId, binding: KeyBinding | n
     }
     if (Object.keys(next).length === 0) {
       window.localStorage.removeItem(STORAGE_KEY);
+      invalidateOverrideCache();
       return;
     }
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    invalidateOverrideCache();
   } catch {
     // Quota / access errors shouldn't break the app.
   }
@@ -118,6 +143,7 @@ export function clearKeymapOverrides(): void {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.removeItem(STORAGE_KEY);
+    invalidateOverrideCache();
   } catch {
     // ignore
   }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { KeyBinding } from "./types";
 import {
   getShortcutGroups,
   KEYMAP_COMMANDS,
@@ -69,5 +70,12 @@ describe("getShortcutGroups", () => {
     const pinned = nav?.items.find((i) => i.label.includes("pinned session"));
     expect(pinned?.keys).not.toContain("Alt");
     expect(pinned?.keys).toContain("1…0");
+  });
+
+  it("uses modifier-agnostic bindings for the mention menu", () => {
+    const up = KEYMAP_COMMANDS["mention-navigate-up"].defaultBinding as KeyBinding;
+    const slashUp = KEYMAP_COMMANDS["slash-navigate-up"].defaultBinding as KeyBinding;
+    expect(up.mod).toBeUndefined();
+    expect(slashUp.mod).toBe("forbidden");
   });
 });
