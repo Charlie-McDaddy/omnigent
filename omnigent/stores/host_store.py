@@ -20,7 +20,7 @@ from sqlalchemy import Engine, select, update
 from sqlalchemy import delete as sql_delete
 from sqlalchemy.orm import Session
 
-from omnigent.db.db_models import DEFAULT_WORKSPACE_ID, SqlConversation, SqlHost
+from omnigent.db.db_models import SqlConversation, SqlHost, current_workspace_id
 from omnigent.db.utils import get_or_create_engine, make_managed_session_maker, now_epoch
 
 # A host is considered live only if its row was touched (connect or
@@ -234,7 +234,7 @@ class HostStore:
             json.dumps(configured_harnesses) if configured_harnesses is not None else None
         )
         with self._session() as session:
-            row = session.get(SqlHost, (DEFAULT_WORKSPACE_ID, owner, name))
+            row = session.get(SqlHost, (current_workspace_id(), owner, name))
             if row is None and allow_host_id_reown:
                 reowned = self._reown_host_id(
                     session,
@@ -310,7 +310,7 @@ class HostStore:
         bound_ids = list(
             session.execute(
                 select(SqlConversation.id).where(
-                    SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversation.workspace_id == current_workspace_id(),
                     SqlConversation.host_id == old_host_id,
                 )
             ).scalars()
@@ -319,7 +319,7 @@ class HostStore:
             session.execute(
                 update(SqlConversation)
                 .where(
-                    SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversation.workspace_id == current_workspace_id(),
                     SqlConversation.host_id == old_host_id,
                 )
                 .values(host_id=None)
@@ -331,7 +331,7 @@ class HostStore:
             session.execute(
                 update(SqlConversation)
                 .where(
-                    SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversation.workspace_id == current_workspace_id(),
                     SqlConversation.id.in_(bound_ids),
                 )
                 .values(host_id=new_host_id)
@@ -374,7 +374,7 @@ class HostStore:
         """
         existing = session.execute(
             select(SqlHost).where(
-                SqlHost.workspace_id == DEFAULT_WORKSPACE_ID, SqlHost.host_id == host_id
+                SqlHost.workspace_id == current_workspace_id(), SqlHost.host_id == host_id
             )
         ).scalar_one_or_none()
         if existing is None:
@@ -384,7 +384,7 @@ class HostStore:
         session.execute(
             update(SqlHost)
             .where(
-                SqlHost.workspace_id == DEFAULT_WORKSPACE_ID,
+                SqlHost.workspace_id == current_workspace_id(),
                 SqlHost.host_id == host_id,
             )
             .values(
@@ -420,7 +420,7 @@ class HostStore:
         with self._session() as session:
             row = session.execute(
                 select(SqlHost).where(
-                    SqlHost.workspace_id == DEFAULT_WORKSPACE_ID, SqlHost.host_id == host_id
+                    SqlHost.workspace_id == current_workspace_id(), SqlHost.host_id == host_id
                 )
             ).scalar_one_or_none()
             if row is not None:
@@ -449,7 +449,7 @@ class HostStore:
             session.execute(
                 update(SqlHost)
                 .where(
-                    SqlHost.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlHost.workspace_id == current_workspace_id(),
                     SqlHost.host_id == host_id,
                 )
                 .values(updated_at=now_epoch())
@@ -499,7 +499,7 @@ class HostStore:
         with self._session() as session:
             rows = session.execute(
                 select(SqlHost.host_id, SqlHost.status, SqlHost.updated_at).where(
-                    SqlHost.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlHost.workspace_id == current_workspace_id(),
                     SqlHost.host_id.in_(unique_ids),
                 )
             ).all()
@@ -524,7 +524,7 @@ class HostStore:
             rows = (
                 session.query(SqlHost)
                 .filter(
-                    SqlHost.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlHost.workspace_id == current_workspace_id(),
                     SqlHost.owner == owner,
                 )
                 .order_by(SqlHost.updated_at.desc())
@@ -543,7 +543,7 @@ class HostStore:
         with self._session() as session:
             row = session.execute(
                 select(SqlHost).where(
-                    SqlHost.workspace_id == DEFAULT_WORKSPACE_ID, SqlHost.host_id == host_id
+                    SqlHost.workspace_id == current_workspace_id(), SqlHost.host_id == host_id
                 )
             ).scalar_one_or_none()
             if row is None:
@@ -602,7 +602,7 @@ class HostStore:
         with self._session() as session:
             existing = session.execute(
                 select(SqlHost).where(
-                    SqlHost.workspace_id == DEFAULT_WORKSPACE_ID, SqlHost.host_id == host_id
+                    SqlHost.workspace_id == current_workspace_id(), SqlHost.host_id == host_id
                 )
             ).scalar_one_or_none()
             if existing is not None:
@@ -657,7 +657,7 @@ class HostStore:
         with self._session() as session:
             row = session.execute(
                 select(SqlHost).where(
-                    SqlHost.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlHost.workspace_id == current_workspace_id(),
                     SqlHost.token_hash == hash_host_launch_token(token),
                 )
             ).scalar_one_or_none()
@@ -685,14 +685,14 @@ class HostStore:
             session.execute(
                 update(SqlConversation)
                 .where(
-                    SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversation.workspace_id == current_workspace_id(),
                     SqlConversation.host_id == host_id,
                 )
                 .values(host_id=None)
             )
             session.execute(
                 sql_delete(SqlHost).where(
-                    SqlHost.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlHost.workspace_id == current_workspace_id(),
                     SqlHost.host_id == host_id,
                 )
             )
@@ -713,7 +713,7 @@ class HostStore:
         with self._session() as session:
             row = session.execute(
                 select(SqlHost).where(
-                    SqlHost.workspace_id == DEFAULT_WORKSPACE_ID, SqlHost.host_id == host_id
+                    SqlHost.workspace_id == current_workspace_id(), SqlHost.host_id == host_id
                 )
             ).scalar_one_or_none()
             if row is None:

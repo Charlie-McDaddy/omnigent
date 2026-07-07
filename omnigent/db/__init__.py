@@ -9,6 +9,8 @@ from omnigent.db.db_models import (
     SqlFile,
     SqlSessionPermission,
     SqlUser,
+    current_workspace_id,
+    workspace_scope,
 )
 
 __all__ = [
@@ -20,4 +22,6 @@ __all__ = [
     "SqlFile",
     "SqlSessionPermission",
     "SqlUser",
+    "current_workspace_id",
+    "workspace_scope",
 ]

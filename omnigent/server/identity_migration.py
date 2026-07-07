@@ -40,13 +40,13 @@ from sqlalchemy import Engine, select, update
 from sqlalchemy.orm import Session
 
 from omnigent.db.db_models import (
-    DEFAULT_WORKSPACE_ID,
     SqlAccountToken,
     SqlComment,
     SqlHost,
     SqlPolicy,
     SqlSessionPermission,
     SqlUser,
+    current_workspace_id,
 )
 from omnigent.server.auth import _RESERVED_USERS
 
@@ -102,7 +102,9 @@ def build_domain_mapping(engine: Engine, domain: str) -> dict[str, str]:
     mapping: dict[str, str] = {}
     with Session(engine) as session:
         ids = (
-            session.execute(select(SqlUser.id).where(SqlUser.workspace_id == DEFAULT_WORKSPACE_ID))
+            session.execute(
+                select(SqlUser.id).where(SqlUser.workspace_id == current_workspace_id())
+            )
             .scalars()
             .all()
         )
@@ -152,12 +154,12 @@ def remap_identities(
             if old_id == new_id:
                 continue
 
-            old_user = session.get(SqlUser, (DEFAULT_WORKSPACE_ID, old_id))
+            old_user = session.get(SqlUser, (current_workspace_id(), old_id))
             if old_user is None:
                 report.skipped_missing.append(old_id)
                 continue
 
-            new_user = session.get(SqlUser, (DEFAULT_WORKSPACE_ID, new_id))
+            new_user = session.get(SqlUser, (current_workspace_id(), new_id))
             if new_user is not None:
                 if not force:
                     report.refused.append(f"{old_id} -> {new_id}")
@@ -183,7 +185,7 @@ def remap_identities(
             old_grants = (
                 session.execute(
                     select(SqlSessionPermission).where(
-                        SqlSessionPermission.workspace_id == DEFAULT_WORKSPACE_ID,
+                        SqlSessionPermission.workspace_id == current_workspace_id(),
                         SqlSessionPermission.user_id == old_id,
                     )
                 )
@@ -192,7 +194,7 @@ def remap_identities(
             )
             for grant in old_grants:
                 existing = session.get(
-                    SqlSessionPermission, (DEFAULT_WORKSPACE_ID, new_id, grant.conversation_id)
+                    SqlSessionPermission, (current_workspace_id(), new_id, grant.conversation_id)
                 )
                 if existing is not None:
                     if grant.level > existing.level:
@@ -211,7 +213,7 @@ def remap_identities(
             ):
                 result = session.execute(
                     update(model)
-                    .where(model.workspace_id == DEFAULT_WORKSPACE_ID, column == old_id)
+                    .where(model.workspace_id == current_workspace_id(), column == old_id)
                     .values(created_by=new_id)
                 )
                 report._bump(model.__tablename__, result.rowcount or 0)
@@ -222,7 +224,7 @@ def remap_identities(
                 result = session.execute(
                     update(SqlAccountToken)
                     .where(
-                        SqlAccountToken.workspace_id == DEFAULT_WORKSPACE_ID,
+                        SqlAccountToken.workspace_id == current_workspace_id(),
                         column == old_id,
                     )
                     .values(**{column_name: new_id})
@@ -236,7 +238,7 @@ def remap_identities(
             old_hosts = (
                 session.execute(
                     select(SqlHost).where(
-                        SqlHost.workspace_id == DEFAULT_WORKSPACE_ID,
+                        SqlHost.workspace_id == current_workspace_id(),
                         SqlHost.owner == old_id,
                     )
                 )
@@ -244,7 +246,7 @@ def remap_identities(
                 .all()
             )
             for host in old_hosts:
-                clash = session.get(SqlHost, (DEFAULT_WORKSPACE_ID, new_id, host.name))
+                clash = session.get(SqlHost, (current_workspace_id(), new_id, host.name))
                 if clash is not None:
                     session.delete(host)  # new owner already has this host name
                 else:

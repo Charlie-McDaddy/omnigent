@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy import and_, asc, desc, or_, select
 
-from omnigent.db.db_models import DEFAULT_WORKSPACE_ID, SqlFile
+from omnigent.db.db_models import SqlFile, current_workspace_id
 from omnigent.db.utils import (
     generate_file_id,
     get_or_create_engine,
@@ -97,7 +97,7 @@ class SqlAlchemyFileStore(FileStore):
             ``None``.
         """
         with self._session() as session:
-            row = session.get(SqlFile, (DEFAULT_WORKSPACE_ID, file_id))
+            row = session.get(SqlFile, (current_workspace_id(), file_id))
             if row is None:
                 return None
             if session_id is not None and row.session_id != session_id:
@@ -129,7 +129,7 @@ class SqlAlchemyFileStore(FileStore):
         with self._session() as session:
             is_desc = order == "desc"
             sort_fn = desc if is_desc else asc
-            stmt = select(SqlFile).where(SqlFile.workspace_id == DEFAULT_WORKSPACE_ID)
+            stmt = select(SqlFile).where(SqlFile.workspace_id == current_workspace_id())
             if session_id is not None:
                 if include_unscoped:
                     stmt = stmt.where(
@@ -141,7 +141,7 @@ class SqlAlchemyFileStore(FileStore):
                 sub = (
                     select(SqlFile.created_at)
                     .where(
-                        SqlFile.workspace_id == DEFAULT_WORKSPACE_ID,
+                        SqlFile.workspace_id == current_workspace_id(),
                         SqlFile.id == after,
                     )
                     .scalar_subquery()
@@ -153,7 +153,7 @@ class SqlAlchemyFileStore(FileStore):
                 sub = (
                     select(SqlFile.created_at)
                     .where(
-                        SqlFile.workspace_id == DEFAULT_WORKSPACE_ID,
+                        SqlFile.workspace_id == current_workspace_id(),
                         SqlFile.id == before,
                     )
                     .scalar_subquery()
@@ -193,7 +193,7 @@ class SqlAlchemyFileStore(FileStore):
         :returns: ``True`` if deleted, ``False`` otherwise.
         """
         with self._session() as session:
-            row = session.get(SqlFile, (DEFAULT_WORKSPACE_ID, file_id))
+            row = session.get(SqlFile, (current_workspace_id(), file_id))
             if not row:
                 return False
             if session_id is not None and row.session_id != session_id:
@@ -210,7 +210,7 @@ class SqlAlchemyFileStore(FileStore):
         """
         with self._session() as session:
             stmt = select(SqlFile).where(
-                SqlFile.workspace_id == DEFAULT_WORKSPACE_ID,
+                SqlFile.workspace_id == current_workspace_id(),
                 SqlFile.session_id == session_id,
             )
             rows = list(session.execute(stmt).scalars().all())

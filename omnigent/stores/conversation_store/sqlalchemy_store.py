@@ -26,7 +26,6 @@ from omnigent._wrapper_labels import UI_MODE_LABEL_KEY, WRAPPER_LABEL_KEY
 from omnigent.db.converters import sql_agent_to_entity
 from omnigent.db.db_models import (
     AGENT_KIND_SESSION,
-    DEFAULT_WORKSPACE_ID,
     LABEL_VALUE_MAX_LEN,
     SqlAgent,
     SqlComment,
@@ -36,6 +35,7 @@ from omnigent.db.db_models import (
     SqlPolicy,
     SqlSessionPermission,
     SqlUserDailyCost,
+    current_workspace_id,
 )
 from omnigent.db.utils import (
     _supports_fts5,
@@ -293,7 +293,7 @@ def _upsert_labels(
     for row in rows:
         existing = session.get(
             SqlConversationLabel,
-            (DEFAULT_WORKSPACE_ID, row["conversation_id"], row["key"]),
+            (current_workspace_id(), row["conversation_id"], row["key"]),
         )
         if existing is None:
             session.add(SqlConversationLabel(**row))
@@ -368,7 +368,7 @@ def _fetch_labels(
     """
     rows = session.execute(
         select(SqlConversationLabel.key, SqlConversationLabel.value).where(
-            SqlConversationLabel.workspace_id == DEFAULT_WORKSPACE_ID,
+            SqlConversationLabel.workspace_id == current_workspace_id(),
             SqlConversationLabel.conversation_id == conversation_id,
         )
     ).all()
@@ -402,7 +402,7 @@ def _fetch_labels_bulk(
             SqlConversationLabel.key,
             SqlConversationLabel.value,
         ).where(
-            SqlConversationLabel.workspace_id == DEFAULT_WORKSPACE_ID,
+            SqlConversationLabel.workspace_id == current_workspace_id(),
             SqlConversationLabel.conversation_id.in_(conversation_ids),
         )
     ).all()
@@ -454,7 +454,7 @@ def _ranked_latest_message_item_ids(conversation_ids: list[str]) -> Subquery:
             .label("row_num"),
         )
         .where(
-            SqlConversationItem.workspace_id == DEFAULT_WORKSPACE_ID,
+            SqlConversationItem.workspace_id == current_workspace_id(),
             SqlConversationItem.conversation_id.in_(conversation_ids),
             SqlConversationItem.type == "message",
         )
@@ -544,7 +544,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             stmt = (
                 select(SqlConversation.id)
                 .where(
-                    SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversation.workspace_id == current_workspace_id(),
                     SqlConversation.id == conversation_id,
                 )
                 .with_for_update()
@@ -645,7 +645,7 @@ class SqlAlchemyConversationStore(ConversationStore):
                     root_id: str = new_id
                 else:
                     parent_row = session.get(
-                        SqlConversation, (DEFAULT_WORKSPACE_ID, parent_conversation_id)
+                        SqlConversation, (current_workspace_id(), parent_conversation_id)
                     )
                     if parent_row is None:
                         raise ConversationNotFoundError(
@@ -723,7 +723,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             ``None``.
         """
         with self._session() as session:
-            row = session.get(SqlConversation, (DEFAULT_WORKSPACE_ID, conversation_id))
+            row = session.get(SqlConversation, (current_workspace_id(), conversation_id))
             if row is None:
                 return None
             return _to_conversation(row, _fetch_labels(session, conversation_id))
@@ -741,7 +741,7 @@ class SqlAlchemyConversationStore(ConversationStore):
         with self._session() as session:
             rows = session.execute(
                 select(SqlConversation.id, SqlConversation.runner_id).where(
-                    SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversation.workspace_id == current_workspace_id(),
                     SqlConversation.id.in_(unique_ids),
                 )
             ).all()
@@ -774,7 +774,7 @@ class SqlAlchemyConversationStore(ConversationStore):
                     SqlConversation.runner_id,
                     SqlConversation.host_id,
                 ).where(
-                    SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversation.workspace_id == current_workspace_id(),
                     SqlConversation.id.in_(unique_ids),
                 )
             ).all()
@@ -786,7 +786,7 @@ class SqlAlchemyConversationStore(ConversationStore):
                     SqlConversationLabel.key,
                     SqlConversationLabel.value,
                 ).where(
-                    SqlConversationLabel.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversationLabel.workspace_id == current_workspace_id(),
                     SqlConversationLabel.conversation_id.in_(unique_ids),
                     SqlConversationLabel.key.in_([FORK_SOURCE_LABEL_KEY]),
                 )
@@ -823,7 +823,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             rows = list(
                 session.execute(
                     select(SqlConversation).where(
-                        SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID,
+                        SqlConversation.workspace_id == current_workspace_id(),
                         SqlConversation.id.in_(unique_ids),
                     )
                 )
@@ -865,7 +865,7 @@ class SqlAlchemyConversationStore(ConversationStore):
         with self._session() as session:
             rows = session.execute(
                 select(SqlConversation.parent_conversation_id, SqlConversation.id)
-                .where(SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID)
+                .where(SqlConversation.workspace_id == current_workspace_id())
                 .where(SqlConversation.kind == "sub_agent")
                 .where(SqlConversation.parent_conversation_id.in_(unique_ids))
                 .order_by(
@@ -932,7 +932,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             session.execute(
                 update(SqlConversation)
                 .where(
-                    SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversation.workspace_id == current_workspace_id(),
                     SqlConversation.id == conversation_id,
                 )
                 .values(session_state=json.dumps(state))
@@ -962,7 +962,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             session.execute(
                 update(SqlConversation)
                 .where(
-                    SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversation.workspace_id == current_workspace_id(),
                     SqlConversation.id == conversation_id,
                 )
                 .values(session_usage=json.dumps(usage))
@@ -1001,7 +1001,7 @@ class SqlAlchemyConversationStore(ConversationStore):
 
         with self._session_immediate() as session:
             q = select(SqlConversation).where(
-                SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID,
+                SqlConversation.workspace_id == current_workspace_id(),
                 SqlConversation.id == conversation_id,
             )
             if self._supports_for_update:
@@ -1014,7 +1014,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             session.execute(
                 update(SqlConversation)
                 .where(
-                    SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversation.workspace_id == current_workspace_id(),
                     SqlConversation.id == conversation_id,
                 )
                 .values(session_usage=json.dumps(current))
@@ -1049,7 +1049,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             # Generic dialect fallback — SELECT-then-INSERT/UPDATE in one
             # transaction (race-safe under SERIALIZABLE / SQLite's
             # single-writer semantics).
-            existing = session.get(SqlUserDailyCost, (DEFAULT_WORKSPACE_ID, user_id, day_utc))
+            existing = session.get(SqlUserDailyCost, (current_workspace_id(), user_id, day_utc))
             if existing is None:
                 session.add(
                     SqlUserDailyCost(
@@ -1127,7 +1127,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             exists for ``(user_id, day_utc)``.
         """
         with self._session() as session:
-            row = session.get(SqlUserDailyCost, (DEFAULT_WORKSPACE_ID, user_id, day_utc))
+            row = session.get(SqlUserDailyCost, (current_workspace_id(), user_id, day_utc))
             return float(row.cost_usd) if row is not None else 0.0
 
     def get_daily_cost_state(self, user_id: str, day_utc: str) -> dict[str, float]:
@@ -1145,7 +1145,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             both ``0.0`` when no row exists for ``(user_id, day_utc)``.
         """
         with self._session() as session:
-            row = session.get(SqlUserDailyCost, (DEFAULT_WORKSPACE_ID, user_id, day_utc))
+            row = session.get(SqlUserDailyCost, (current_workspace_id(), user_id, day_utc))
             if row is None:
                 return {"cost_usd": 0.0, "ask_approved_usd": 0.0}
             return {
@@ -1205,7 +1205,7 @@ class SqlAlchemyConversationStore(ConversationStore):
                 session.execute(stmt)
                 return
             # Generic dialect fallback — SELECT-then-INSERT/UPDATE.
-            existing = session.get(SqlUserDailyCost, (DEFAULT_WORKSPACE_ID, user_id, day_utc))
+            existing = session.get(SqlUserDailyCost, (current_workspace_id(), user_id, day_utc))
             if existing is None:
                 session.add(
                     SqlUserDailyCost(
@@ -1244,7 +1244,7 @@ class SqlAlchemyConversationStore(ConversationStore):
         with self._session() as session:
             return session.execute(
                 select(SqlSessionPermission.user_id)
-                .where(SqlSessionPermission.workspace_id == DEFAULT_WORKSPACE_ID)
+                .where(SqlSessionPermission.workspace_id == current_workspace_id())
                 .where(SqlSessionPermission.conversation_id == conversation_id)
                 .where(SqlSessionPermission.user_id != RESERVED_USER_PUBLIC)
                 .order_by(SqlSessionPermission.level.desc())
@@ -1298,7 +1298,7 @@ class SqlAlchemyConversationStore(ConversationStore):
                 if conversation_id is not None:
                     stmt = text(
                         "SELECT ci.id FROM conversation_items ci "
-                        "WHERE ci.workspace_id = 0 "
+                        "WHERE ci.workspace_id = :ws "
                         "AND ci.conversation_id = :cid "
                         "AND ci.data::text ILIKE :query "
                         "ORDER BY ci.created_at DESC LIMIT :limit"
@@ -1306,12 +1306,16 @@ class SqlAlchemyConversationStore(ConversationStore):
                 else:
                     stmt = text(
                         "SELECT ci.id FROM conversation_items ci "
-                        "WHERE ci.workspace_id = 0 "
+                        "WHERE ci.workspace_id = :ws "
                         "AND ci.data::text ILIKE :query "
                         "ORDER BY ci.created_at DESC LIMIT :limit"
                     )
                 query = like_pattern
-            params: dict[str, str | int] = {"query": query, "limit": limit}
+            params: dict[str, str | int] = {
+                "query": query,
+                "limit": limit,
+                "ws": current_workspace_id(),
+            }
             if conversation_id is not None:
                 params["cid"] = conversation_id
             item_ids = [row[0] for row in session.execute(stmt, params).fetchall()]
@@ -1320,7 +1324,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             rows = (
                 session.execute(
                     select(SqlConversationItem).where(
-                        SqlConversationItem.workspace_id == DEFAULT_WORKSPACE_ID,
+                        SqlConversationItem.workspace_id == current_workspace_id(),
                         SqlConversationItem.id.in_(item_ids),
                     )
                 )
@@ -1363,7 +1367,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             is_asc = order == "asc"
             sort_fn = asc if is_asc else desc
             stmt = select(SqlConversationItem).where(
-                SqlConversationItem.workspace_id == DEFAULT_WORKSPACE_ID,
+                SqlConversationItem.workspace_id == current_workspace_id(),
                 SqlConversationItem.conversation_id == conversation_id,
             )
             if type is not None:
@@ -1372,7 +1376,7 @@ class SqlAlchemyConversationStore(ConversationStore):
                 sub = (
                     select(SqlConversationItem.position)
                     .where(
-                        SqlConversationItem.workspace_id == DEFAULT_WORKSPACE_ID,
+                        SqlConversationItem.workspace_id == current_workspace_id(),
                         SqlConversationItem.id == after,
                     )
                     .scalar_subquery()
@@ -1387,7 +1391,7 @@ class SqlAlchemyConversationStore(ConversationStore):
                 sub = (
                     select(SqlConversationItem.position)
                     .where(
-                        SqlConversationItem.workspace_id == DEFAULT_WORKSPACE_ID,
+                        SqlConversationItem.workspace_id == current_workspace_id(),
                         SqlConversationItem.id == before,
                     )
                     .scalar_subquery()
@@ -1444,7 +1448,7 @@ class SqlAlchemyConversationStore(ConversationStore):
                     select(SqlConversationItem)
                     .join(ranked, SqlConversationItem.id == ranked.c.item_id)
                     .where(
-                        SqlConversationItem.workspace_id == DEFAULT_WORKSPACE_ID,
+                        SqlConversationItem.workspace_id == current_workspace_id(),
                         ranked.c.row_num <= per_conversation_limit,
                     )
                     .order_by(
@@ -1488,7 +1492,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             self._lock_conversation(session, conversation_id)
 
             # Bump updated_at on the conversation.
-            conv_row = session.get(SqlConversation, (DEFAULT_WORKSPACE_ID, conversation_id))
+            conv_row = session.get(SqlConversation, (current_workspace_id(), conversation_id))
             if conv_row is not None:
                 conv_row.updated_at = now
 
@@ -1511,7 +1515,7 @@ class SqlAlchemyConversationStore(ConversationStore):
                 next_pos = (
                     session.execute(
                         select(func.coalesce(func.max(SqlConversationItem.position), -1)).where(
-                            SqlConversationItem.workspace_id == DEFAULT_WORKSPACE_ID,
+                            SqlConversationItem.workspace_id == current_workspace_id(),
                             SqlConversationItem.conversation_id == conversation_id,
                         )
                     ).scalar_one()
@@ -1595,8 +1599,8 @@ class SqlAlchemyConversationStore(ConversationStore):
                     SqlConversation.id == SqlConversationLabel.conversation_id,
                 )
                 .where(
-                    SqlConversationLabel.workspace_id == DEFAULT_WORKSPACE_ID,
-                    SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversationLabel.workspace_id == current_workspace_id(),
+                    SqlConversation.workspace_id == current_workspace_id(),
                     SqlConversationLabel.key == PROJECT_LABEL_KEY,
                     SqlConversation.archived.is_(False),
                 )
@@ -1605,7 +1609,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             )
             if accessible_by is not None:
                 accessible_ids = select(SqlSessionPermission.conversation_id).where(
-                    SqlSessionPermission.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlSessionPermission.workspace_id == current_workspace_id(),
                     SqlSessionPermission.user_id == accessible_by,
                 )
                 stmt = stmt.where(SqlConversationLabel.conversation_id.in_(accessible_ids))
@@ -1627,7 +1631,7 @@ class SqlAlchemyConversationStore(ConversationStore):
         with self._session() as session:
             session.execute(
                 delete(SqlConversationLabel).where(
-                    SqlConversationLabel.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversationLabel.workspace_id == current_workspace_id(),
                     SqlConversationLabel.conversation_id == conversation_id,
                     SqlConversationLabel.key == key,
                 )
@@ -1708,7 +1712,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             is_desc = order == "desc"
             sort_fn = desc if is_desc else asc
             stmt = select(SqlConversation).where(
-                SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID
+                SqlConversation.workspace_id == current_workspace_id()
             )
             # Filter by kind when specified (None = no filter).
             if kind is not None:
@@ -1727,7 +1731,7 @@ class SqlAlchemyConversationStore(ConversationStore):
                 stmt = stmt.where(SqlConversation.archived.is_(False))
             if agent_name is not None:
                 stmt = stmt.join(SqlAgent, SqlAgent.id == SqlConversation.agent_id).where(
-                    SqlAgent.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlAgent.workspace_id == current_workspace_id(),
                     SqlAgent.name == agent_name,
                 )
             if agent_id is not None:
@@ -1738,7 +1742,7 @@ class SqlAlchemyConversationStore(ConversationStore):
                 stmt = stmt.where(SqlConversation.agent_id == agent_id)
             if accessible_by is not None:
                 accessible_ids = select(SqlSessionPermission.conversation_id).where(
-                    SqlSessionPermission.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlSessionPermission.workspace_id == current_workspace_id(),
                     SqlSessionPermission.user_id == accessible_by,
                 )
                 stmt = stmt.where(SqlConversation.id.in_(accessible_ids))
@@ -1748,7 +1752,7 @@ class SqlAlchemyConversationStore(ConversationStore):
                 content_match = SqlConversation.id.in_(
                     select(SqlConversationItem.conversation_id)
                     .where(
-                        SqlConversationItem.workspace_id == DEFAULT_WORKSPACE_ID,
+                        SqlConversationItem.workspace_id == current_workspace_id(),
                         func.lower(SqlConversationItem.search_text).like(pattern),
                     )
                     .distinct()
@@ -1760,7 +1764,7 @@ class SqlAlchemyConversationStore(ConversationStore):
                     stmt = stmt.where(
                         SqlConversation.id.not_in(
                             select(SqlConversationLabel.conversation_id).where(
-                                SqlConversationLabel.workspace_id == DEFAULT_WORKSPACE_ID,
+                                SqlConversationLabel.workspace_id == current_workspace_id(),
                                 SqlConversationLabel.key == PROJECT_LABEL_KEY,
                             )
                         )
@@ -1770,7 +1774,7 @@ class SqlAlchemyConversationStore(ConversationStore):
                     stmt = stmt.where(
                         SqlConversation.id.in_(
                             select(SqlConversationLabel.conversation_id).where(
-                                SqlConversationLabel.workspace_id == DEFAULT_WORKSPACE_ID,
+                                SqlConversationLabel.workspace_id == current_workspace_id(),
                                 SqlConversationLabel.key == PROJECT_LABEL_KEY,
                                 SqlConversationLabel.value == project,
                             )
@@ -1870,7 +1874,7 @@ class SqlAlchemyConversationStore(ConversationStore):
         sub = (
             select(sort_col)
             .where(
-                SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID,
+                SqlConversation.workspace_id == current_workspace_id(),
                 SqlConversation.id == cursor_id,
             )
             .scalar_subquery()
@@ -1884,7 +1888,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             tiebreaker_val = (
                 select(tiebreaker_col)
                 .where(
-                    SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversation.workspace_id == current_workspace_id(),
                     SqlConversation.id == cursor_id,
                 )
                 .scalar_subquery()
@@ -1950,7 +1954,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             if the conversation does not exist.
         """
         with self._session() as session:
-            row = session.get(SqlConversation, (DEFAULT_WORKSPACE_ID, conversation_id))
+            row = session.get(SqlConversation, (current_workspace_id(), conversation_id))
             if not row:
                 return None
             changed = False
@@ -2015,7 +2019,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             stmt = (
                 update(SqlConversation)
                 .where(
-                    SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversation.workspace_id == current_workspace_id(),
                     SqlConversation.id == conversation_id,
                 )
                 .where(SqlConversation.runner_id.is_(None))
@@ -2041,7 +2045,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             exists for ``conversation_id``.
         """
         with self._session() as session:
-            row = session.get(SqlConversation, (DEFAULT_WORKSPACE_ID, conversation_id))
+            row = session.get(SqlConversation, (current_workspace_id(), conversation_id))
             if row is None:
                 raise ConversationNotFoundError(
                     f"conversation {conversation_id!r} does not exist",
@@ -2061,7 +2065,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             exists for ``conversation_id``.
         """
         with self._session() as session:
-            row = session.get(SqlConversation, (DEFAULT_WORKSPACE_ID, conversation_id))
+            row = session.get(SqlConversation, (current_workspace_id(), conversation_id))
             if row is None:
                 raise ConversationNotFoundError(
                     f"conversation {conversation_id!r} does not exist",
@@ -2086,7 +2090,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             exists for ``conversation_id``.
         """
         with self._session() as session:
-            row = session.get(SqlConversation, (DEFAULT_WORKSPACE_ID, conversation_id))
+            row = session.get(SqlConversation, (current_workspace_id(), conversation_id))
             if row is None:
                 raise ConversationNotFoundError(
                     f"conversation {conversation_id!r} does not exist",
@@ -2113,7 +2117,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             rows = (
                 session.query(SqlConversation)
                 .filter(
-                    SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversation.workspace_id == current_workspace_id(),
                     SqlConversation.host_id == host_id,
                 )
                 .all()
@@ -2135,7 +2139,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             rows = (
                 session.query(SqlConversation)
                 .filter(
-                    SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversation.workspace_id == current_workspace_id(),
                     SqlConversation.runner_id == runner_id,
                 )
                 .all()
@@ -2183,7 +2187,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             and the caller did not supply one).
         """
         with self._session() as session:
-            row = session.get(SqlConversation, (DEFAULT_WORKSPACE_ID, conversation_id))
+            row = session.get(SqlConversation, (current_workspace_id(), conversation_id))
             if row is None:
                 raise ConversationNotFoundError(
                     f"conversation {conversation_id!r} does not exist",
@@ -2220,7 +2224,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             ``external_session_id``.
         """
         with self._session() as session:
-            row = session.get(SqlConversation, (DEFAULT_WORKSPACE_ID, conversation_id))
+            row = session.get(SqlConversation, (current_workspace_id(), conversation_id))
             if row is None:
                 raise ConversationNotFoundError(
                     f"conversation {conversation_id!r} does not exist",
@@ -2312,7 +2316,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             root_conversation_id: str | None = None
             if parent_conversation_id is not None:
                 parent_row = session.get(
-                    SqlConversation, (DEFAULT_WORKSPACE_ID, parent_conversation_id)
+                    SqlConversation, (current_workspace_id(), parent_conversation_id)
                 )
                 if parent_row is None:
                     raise ConversationNotFoundError(
@@ -2463,7 +2467,7 @@ class SqlAlchemyConversationStore(ConversationStore):
         """
         now = now_epoch()
         with self._session() as session:
-            source = session.get(SqlConversation, (DEFAULT_WORKSPACE_ID, source_conversation_id))
+            source = session.get(SqlConversation, (current_workspace_id(), source_conversation_id))
             if source is None:
                 raise LookupError(f"conversation not found: {source_conversation_id!r}")
 
@@ -2526,7 +2530,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             if up_to_response_id is not None:
                 cutoff_position = session.execute(
                     select(func.max(SqlConversationItem.position)).where(
-                        SqlConversationItem.workspace_id == DEFAULT_WORKSPACE_ID,
+                        SqlConversationItem.workspace_id == current_workspace_id(),
                         SqlConversationItem.conversation_id == source_conversation_id,
                         SqlConversationItem.response_id == up_to_response_id,
                     )
@@ -2538,7 +2542,7 @@ class SqlAlchemyConversationStore(ConversationStore):
                     )
                 last_position = session.execute(
                     select(func.max(SqlConversationItem.position)).where(
-                        SqlConversationItem.workspace_id == DEFAULT_WORKSPACE_ID,
+                        SqlConversationItem.workspace_id == current_workspace_id(),
                         SqlConversationItem.conversation_id == source_conversation_id,
                     )
                 ).scalar_one()
@@ -2549,7 +2553,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             items_query = (
                 select(SqlConversationItem)
                 .where(
-                    SqlConversationItem.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversationItem.workspace_id == current_workspace_id(),
                     SqlConversationItem.conversation_id == source_conversation_id,
                 )
                 .order_by(SqlConversationItem.position.asc())
@@ -2706,7 +2710,7 @@ class SqlAlchemyConversationStore(ConversationStore):
         """
         now = now_epoch()
         with self._session() as session:
-            row = session.get(SqlConversation, (DEFAULT_WORKSPACE_ID, conversation_id))
+            row = session.get(SqlConversation, (current_workspace_id(), conversation_id))
             if row is None:
                 raise LookupError(f"conversation not found: {conversation_id!r}")
 
@@ -2719,7 +2723,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             row.agent_id = None
             session.flush()
             if old_agent_id is not None:
-                old_agent = session.get(SqlAgent, (DEFAULT_WORKSPACE_ID, old_agent_id))
+                old_agent = session.get(SqlAgent, (current_workspace_id(), old_agent_id))
                 if old_agent is not None and old_agent.kind == AGENT_KIND_SESSION:
                     session.delete(old_agent)
                     session.flush()
@@ -2772,7 +2776,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             if present_drop:
                 session.execute(
                     delete(SqlConversationLabel).where(
-                        SqlConversationLabel.workspace_id == DEFAULT_WORKSPACE_ID,
+                        SqlConversationLabel.workspace_id == current_workspace_id(),
                         SqlConversationLabel.conversation_id == conversation_id,
                         SqlConversationLabel.key.in_(present_drop),
                     )
@@ -2804,7 +2808,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             ``False`` otherwise.
         """
         with self._session() as session:
-            row = session.get(SqlConversation, (DEFAULT_WORKSPACE_ID, conversation_id))
+            row = session.get(SqlConversation, (current_workspace_id(), conversation_id))
             if not row:
                 return False
 
@@ -2813,14 +2817,14 @@ class SqlAlchemyConversationStore(ConversationStore):
             cte = (
                 select(SqlConversation.id)
                 .where(
-                    SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversation.workspace_id == current_workspace_id(),
                     SqlConversation.id == conversation_id,
                 )
                 .cte(name="subtree", recursive=True)
             )
             cte = cte.union_all(
                 select(SqlConversation.id).where(
-                    SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversation.workspace_id == current_workspace_id(),
                     SqlConversation.parent_conversation_id == cte.c.id,
                 )
             )
@@ -2834,31 +2838,31 @@ class SqlAlchemyConversationStore(ConversationStore):
 
             session.execute(
                 delete(SqlConversationItem).where(
-                    SqlConversationItem.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversationItem.workspace_id == current_workspace_id(),
                     SqlConversationItem.conversation_id.in_(subtree_ids),
                 )
             )
             session.execute(
                 delete(SqlConversationLabel).where(
-                    SqlConversationLabel.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversationLabel.workspace_id == current_workspace_id(),
                     SqlConversationLabel.conversation_id.in_(subtree_ids),
                 )
             )
             session.execute(
                 delete(SqlComment).where(
-                    SqlComment.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlComment.workspace_id == current_workspace_id(),
                     SqlComment.conversation_id.in_(subtree_ids),
                 )
             )
             session.execute(
                 delete(SqlPolicy).where(
-                    SqlPolicy.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlPolicy.workspace_id == current_workspace_id(),
                     SqlPolicy.session_id.in_(subtree_ids),
                 )
             )
             session.execute(
                 delete(SqlSessionPermission).where(
-                    SqlSessionPermission.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlSessionPermission.workspace_id == current_workspace_id(),
                     SqlSessionPermission.conversation_id.in_(subtree_ids),
                 )
             )
@@ -2867,7 +2871,7 @@ class SqlAlchemyConversationStore(ConversationStore):
             # ordering constraints are satisfied.
             session.execute(
                 delete(SqlConversation).where(
-                    SqlConversation.workspace_id == DEFAULT_WORKSPACE_ID,
+                    SqlConversation.workspace_id == current_workspace_id(),
                     SqlConversation.id.in_(subtree_ids),
                     SqlConversation.id != conversation_id,
                 )
