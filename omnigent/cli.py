@@ -10134,6 +10134,113 @@ def _manage_goose_harness() -> None:
             status = None
 
 
+def _print_acp_examples() -> None:
+    """Print example ACP-agent commands (Omnigent stores no credential)."""
+    from omnigent.onboarding.interactive import console
+
+    console.print(
+        "\n  [bold]Custom ACP agents[/bold] — connect any agent that speaks the "
+        "Agent Client Protocol ([underline]agentclientprotocol.com[/underline]).\n"
+        "  Omnigent stores no credential — log into each agent via its own CLI first.\n\n"
+        "  Example commands to paste:\n"
+        "    • Gemini CLI     [bold]gemini --experimental-acp[/bold]\n"
+        "    • Qwen Code      [bold]qwen --acp[/bold]\n"
+        "    • Goose          [bold]goose acp[/bold]\n"
+        "    • Claude Code    [bold]npx -y @zed-industries/claude-code-acp[/bold]\n"
+    )
+
+
+def _add_acp_agent() -> str | None:
+    """Prompt for a new ACP agent and append it to the ``acp:`` config block.
+
+    :returns: A status line for the menu, or ``None`` when nothing was added.
+    """
+    from omnigent.onboarding.acp_auth import (
+        AcpAgentEntry,
+        acp_agents,
+        acp_agents_settings,
+        slugify,
+    )
+    from omnigent.onboarding.interactive import prompt_text
+
+    name = prompt_text("Agent name (e.g. Gemini CLI)").strip()
+    if not name:
+        return "No name entered"
+    command = prompt_text("Command to launch (e.g. gemini --experimental-acp)").strip()
+    if not command:
+        return "No command entered"
+    model = (prompt_text("Model (optional — Enter to skip)", default="") or "").strip() or None
+
+    entries = list(acp_agents())
+    entries.append(
+        AcpAgentEntry(slug=slugify(name), name=name, command=command, model=model)
+    )
+    _save_global_config(acp_agents_settings(entries))
+    return f"✓ Added {name}"
+
+
+def _remove_acp_agent() -> str | None:
+    """Pick a configured ACP agent to drop from the ``acp:`` config block.
+
+    :returns: A status line for the menu, or ``None`` when cancelled.
+    """
+    from omnigent.onboarding.acp_auth import acp_agents, acp_agents_settings
+    from omnigent.onboarding.interactive import select
+
+    entries = list(acp_agents())
+    if not entries:
+        return "No agents to remove"
+    labels = [f"{e.name}  ({e.command})" for e in entries] + ["← Cancel"]
+    idx = select("Remove which ACP agent?", labels, clear_on_exit=True)
+    if idx < 0 or idx >= len(entries):
+        return None
+    removed = entries.pop(idx)
+    _save_global_config(acp_agents_settings(entries))
+    return f"✓ Removed {removed.name}"
+
+
+def _manage_acp_harness() -> None:
+    """Run the level-2 loop for the generic ACP harness: manage named agents.
+
+    The ``acp`` harness drives any user-configured ACP-agent command. Each named
+    agent lives in the ``acp:`` block of ``~/.omnigent/config.yaml`` and surfaces
+    as its own row (``acp:<slug>``) in the agent-harness picker. Omnigent stores
+    no credential — the user logs into each agent via its own CLI — so this
+    drill-in just adds / lists / removes commands.
+
+    :returns: None. Side effects: reads/writes the ``acp:`` config block.
+    """
+    from omnigent.onboarding.acp_auth import acp_agents
+    from omnigent.onboarding.interactive import select
+
+    status: str | None = None
+    while True:
+        agents = acp_agents()
+        if agents:
+            names = ", ".join(a.name for a in agents)
+            header = f"Custom ACP agents — {len(agents)} configured: {names}"
+        else:
+            header = "Custom ACP agents — none configured yet"
+        rows: list[_HarnessMenuRow] = [_HarnessMenuRow("Add an ACP agent", action="add")]
+        if agents:
+            rows.append(_HarnessMenuRow("Remove an agent", action="remove"))
+        rows.append(_HarnessMenuRow("Show examples", action="help"))
+        rows.append(_HarnessMenuRow("← Back", action="back"))
+        idx = select(header, [r.label for r in rows], clear_on_exit=True, status=status)
+        if idx < 0:  # Esc / q
+            return
+        action = rows[idx].action
+        if action == "back":
+            return
+        if action == "add":
+            status = _add_acp_agent()
+        elif action == "remove":
+            status = _remove_acp_agent()
+        elif action == "help":
+            _print_acp_examples()
+            status = None
+
+
 def _manage_hermes_harness() -> None:
     """Run the level-2 loop for Hermes: ensure the CLI is installed.
 
@@ -11151,6 +11258,10 @@ def _run_configure_harnesses_interactive() -> None:
     # / ``kimi provider add`` → ~/.kimi/config.toml), so it dispatches to its
     # own drill-in rather than ``_manage_harness_providers``.
     _KIMI = "\x00kimi"
+    # Sentinel marking the Custom ACP agent row — the generic ACP harness that
+    # drives any user-configured agent command. Not a provider family (each agent
+    # owns its own auth), so it dispatches to its own add/list/remove drill-in.
+    _ACP = "\x00acp"
     families = [ANTHROPIC_FAMILY, OPENAI_FAMILY, PI_SURFACE]
 
     # Status glyph + Rich color per readiness kind: "ready" is a configured,
@@ -11366,6 +11477,26 @@ def _run_configure_harnesses_interactive() -> None:
                     (_GOOSE, "Goose", "Not configured", "warn", "Open to run `goose configure`."),
                 )
 
+        # Custom ACP agents — any user-configured ACP-agent command. Not gated on
+        # a binary (each agent owns its own install); "configured" = ≥1 registered.
+        from omnigent.onboarding.acp_auth import acp_config_summary
+
+        acp_summary = acp_config_summary()
+        if acp_summary.configured:
+            rows.append(
+                (_ACP, "Custom ACP agent", f"{acp_summary.count} configured", "ready", "")
+            )
+        else:
+            rows.append(
+                (
+                    _ACP,
+                    "Custom ACP agent",
+                    "None configured",
+                    "warn",
+                    "Add any ACP agent (gemini, qwen, goose, …).",
+                )
+            )
+
         # Copilot — GitHub token (github-copilot-sdk extra is soft).
         if copilot_github_token_configured(config) or any(
             os.environ.get(v) for v in COPILOT_TOKEN_ENV_VARS
@@ -11477,6 +11608,8 @@ def _run_configure_harnesses_interactive() -> None:
             _manage_opencode_harness()
         elif target == _GOOSE:
             _manage_goose_harness()
+        elif target == _ACP:
+            _manage_acp_harness()
         elif target == _HERMES:
             _manage_hermes_harness()
         elif target == _KIRO:
