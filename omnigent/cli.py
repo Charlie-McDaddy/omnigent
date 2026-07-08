@@ -11530,13 +11530,17 @@ def _run_configure_harnesses_interactive() -> None:
             rows.append((_KIMI, "Kimi Code", "Not installed", "missing", _install_hint(kimi_hint)))
 
         # Custom ACP agents — the generic `acp` harness driving any user-configured
-        # ACP-agent command. Listed last as the catch-all. Not gated on a binary
-        # (each agent owns its own install); "configured" = ≥1 registered.
+        # ACP-agent command. Each configured agent gets its own overview row so it
+        # sits alongside the built-in harnesses (not buried in a drill-in), plus an
+        # "Add" row. Not gated on a binary — each agent owns its own install. All
+        # route to the shared ACP manager (add / edit / remove).
         from omnigent.onboarding.acp_auth import acp_config_summary
 
         acp_summary = acp_config_summary()
+        for agent in acp_summary.agents:
+            rows.append((_ACP, agent.name, f"ACP · {agent.command}", "ready", ""))
         if acp_summary.configured:
-            rows.append((_ACP, "Custom ACP agent", f"{acp_summary.count} configured", "ready", ""))
+            rows.append((_ACP, "Add custom ACP agent", "", "warn", "Add another ACP agent."))
         else:
             rows.append(
                 (
