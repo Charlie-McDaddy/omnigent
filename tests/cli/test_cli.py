@@ -127,6 +127,35 @@ def test_python_module_entrypoint_uses_unified_click_cli() -> None:
     assert "Omnigent quick chat" not in result.stdout
 
 
+def test_bench_command_registered() -> None:
+    """``bench`` is a real subcommand (and listed in the sync set)."""
+    assert "bench" in _CLICK_SUBCOMMANDS
+    assert "bench" in cli.commands
+
+
+def test_bench_command_delegates_to_harness_bench_main(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``omni bench`` forwards its args verbatim to the bench's argparse main
+    and exits with its return code (thin pass-through wrapper)."""
+    captured: dict[str, object] = {}
+
+    def _fake_main(argv: list[str]) -> int:
+        captured["argv"] = argv
+        return 0
+
+    monkeypatch.setattr("omnigent.harness_bench.__main__.main", _fake_main)
+    result = CliRunner().invoke(cli, ["bench", "--list", "--harness", "codex"])
+    assert result.exit_code == 0
+    # Unknown-to-click options pass straight through (ignore_unknown_options).
+    assert captured["argv"] == ["--list", "--harness", "codex"]
+
+
+def test_bench_command_propagates_nonzero_exit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A DRIFT / error exit code from the bench surfaces as the command's exit."""
+    monkeypatch.setattr("omnigent.harness_bench.__main__.main", lambda argv: 1)
+    result = CliRunner().invoke(cli, ["bench"])
+    assert result.exit_code == 1
+
+
 @pytest.mark.parametrize(
     ("argv", "expected"),
     [

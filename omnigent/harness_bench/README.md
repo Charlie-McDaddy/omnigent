@@ -7,18 +7,26 @@ against a self-declared profile to surface drift. Design and rationale:
 
 ## Run it
 
+`omni bench` is the entry point (a thin wrapper over
+`python -m omnigent.harness_bench`; both share one arg surface, so every flag
+below works either way).
+
 ```bash
 # List official harnesses (name, resolved transport, model).
-python -m omnigent.harness_bench --list
+omni bench --list
+
+# Live if creds resolve (a configured ~/.omnigent profile or ambient
+# OPENAI_*, exactly like `omni run`), else the declared matrix.
+omni bench
 
 # Offline (declared) matrix -- no turns, no creds.
-python -m omnigent.harness_bench
+omni bench --no-live
 
-# Live probe one harness against a gateway profile.
-python -m omnigent.harness_bench --harness codex --profile my-profile
+# Live probe one harness against a specific gateway profile.
+omni bench --harness codex --profile my-profile
 
 # Live probe every official harness, several at a time, with a live table.
-python -m omnigent.harness_bench --profile my-profile --jobs 4 --rich
+omni bench --profile my-profile --jobs 4 --rich
 ```
 
 A non-zero exit means a `DRIFT` cell was found (observed behavior disagrees
@@ -26,8 +34,10 @@ with the declared matrix).
 
 ### Flags
 
-- `--profile NAME` -- Databricks gateway profile. Enables the live layer;
-  without it the bench renders the declared matrix offline.
+- `--profile NAME` -- Databricks gateway profile override. Optional: without it
+  the bench derives creds the way `omni run` does (a configured `~/.omnigent`
+  profile, or ambient `OPENAI_*`). The live layer turns on whenever creds are
+  resolvable; use `--no-live` for the offline declared matrix.
 - `--harness NAME` -- probe one harness (repeatable). An official name, or a
   `module:attr` / `module.ATTR` reference to a community `BenchProfile`.
   Defaults to every official harness.

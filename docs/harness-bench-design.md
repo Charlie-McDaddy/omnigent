@@ -331,18 +331,25 @@ The MVP and most of phase-2 are landed. What exists on `main` today:
 
 ## Running the bench and reading the result
 
+`omni bench` is the entry point (a thin wrapper over
+`python -m omnigent.harness_bench`; both share one arg surface).
+
 ```
 # Offline: the declared matrix, no creds, every harness. Fast.
-python -m omnigent.harness_bench
+omni bench --no-live
 
-# Live: probe one harness against a gateway profile.
-python -m omnigent.harness_bench --harness codex-native --profile oss
+# Live if creds resolve (a configured ~/.omnigent profile or ambient
+# OPENAI_*, like `omni run`), else the declared matrix.
+omni bench
+
+# Live: probe one harness against a specific gateway profile.
+omni bench --harness codex-native --profile oss
 
 # Live: probe every official harness (SDK + native) sequentially.
-python -m omnigent.harness_bench --profile oss
+omni bench --profile oss
 
 # A community harness that ships its own BenchProfile.
-python -m omnigent.harness_bench --harness mypkg.harness:PROFILE --profile oss
+omni bench --harness mypkg.harness:PROFILE --profile oss
 ```
 
 **You do not need to live-probe every harness on every host — and you cannot.**
@@ -409,7 +416,7 @@ the **default** for SDK harnesses — a plain live run proves Tool calling and
 Policy DENY out of the box:
 
 ```
-python -m omnigent.harness_bench --harness claude-sdk --profile oss
+omni bench --harness claude-sdk --profile oss
 ```
 
 Live-verified: `claude-sdk` completes the full matrix on `full-server` —

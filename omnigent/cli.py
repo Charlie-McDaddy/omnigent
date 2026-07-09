@@ -1178,6 +1178,7 @@ _CLICK_SUBCOMMANDS: frozenset[str] = frozenset(
     {
         "antigravity",
         "attach",
+        "bench",
         "claude",
         "codex",
         "config",
@@ -3420,6 +3421,31 @@ def server_status(json_output: bool) -> None:
     if sessions is not None:
         click.echo(f"  live sessions: {sessions}")
     click.echo(f"  host daemon attached: {'yes' if daemon_attached else 'no'}")
+
+
+@cli.command(
+    "bench",
+    context_settings={"ignore_unknown_options": True, "help_option_names": []},
+    add_help_option=False,
+)
+@click.argument("bench_args", nargs=-1, type=click.UNPROCESSED)
+def bench(bench_args: tuple[str, ...]) -> None:
+    """Probe harness capabilities and report a per-dimension verdict matrix.
+
+    A thin wrapper over ``python -m omnigent.harness_bench``; all flags pass
+    straight through (``omni bench --help`` shows the bench's own options). With
+    no ``--profile`` the bench derives creds the way ``omni run`` does (a
+    configured ~/.omnigent profile or ambient OPENAI_*); ``--profile NAME``
+    overrides. Examples::
+
+        omni bench --list
+        omni bench                       # live if creds resolve, else declared
+        omni bench --harness codex --profile oss --rich
+        omni bench --no-live             # offline declared matrix
+    """
+    from omnigent.harness_bench.__main__ import main as _bench_main
+
+    raise SystemExit(_bench_main(list(bench_args)))
 
 
 @cli.command("stop")
