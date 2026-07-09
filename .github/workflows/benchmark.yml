@@ -32,7 +32,7 @@ on:
       items_per_session:
         description: "Seeded items per session"
         required: false
-        default: "50"
+        default: "200"
 
 permissions:
   contents: read
@@ -46,7 +46,7 @@ env:
   ITERATIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.iterations || '200' }}
   RUNS: ${{ github.event_name == 'workflow_dispatch' && inputs.runs || '3' }}
   SESSIONS: ${{ github.event_name == 'workflow_dispatch' && inputs.sessions || '5000' }}
-  ITEMS: ${{ github.event_name == 'workflow_dispatch' && inputs.items_per_session || '50' }}
+  ITEMS: ${{ github.event_name == 'workflow_dispatch' && inputs.items_per_session || '200' }}
 
 concurrency:
   # Never cancel a scheduled run mid-flight (each is a distinct data point);
