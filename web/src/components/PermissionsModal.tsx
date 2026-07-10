@@ -69,7 +69,11 @@ export function PermissionsModal({ sessionId, open, onOpenChange }: PermissionsM
   const info = useServerInfo();
   const sharingMode = info === "loading" ? "on" : info.sharing_mode;
   const sharingOff = sharingMode === "off";
-  const sharingReadOnly = sharingMode === "read_only";
+  // Both read-capped tiers present the read-only UI. Under
+  // "restricted_read_only" the server additionally blocks home/root-cwd
+  // sessions entirely; that per-session rule is enforced server-side and
+  // surfaces here as an error on the grant attempt.
+  const sharingReadOnly = sharingMode === "read_only" || sharingMode === "restricted_read_only";
   // In "off" mode never fetch the grant list — the modal short-circuits to a
   // notice below, so the request would be wasted (and the server rejects any
   // grant anyway).

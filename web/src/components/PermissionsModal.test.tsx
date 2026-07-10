@@ -526,5 +526,29 @@ describe("PermissionsModal", () => {
       const options = within(listbox).getAllByRole("option");
       expect(options.map((o) => o.textContent)).toEqual(["Read"]);
     });
+
+    it("restricted_read_only: presents the same read-only UI as read_only", async () => {
+      // The per-session home/root block is enforced server-side; the modal
+      // itself shows the read-only affordance for every session.
+      listMock.mockResolvedValue([]);
+
+      render(<PermissionsModal sessionId="conv_abc" open={true} onOpenChange={() => {}} />, {
+        wrapper: createSharingWrapper("restricted_read_only"),
+      });
+
+      await waitFor(() => expect(listMock).toHaveBeenCalledWith("conv_abc"));
+      expect(
+        screen.getByText(
+          "This server allows read-only sharing — invite others to view this session.",
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /grant/i })).toBeInTheDocument();
+      const trigger = screen.getByRole("combobox");
+      trigger.focus();
+      fireEvent.keyDown(trigger, { key: "Enter" });
+      const listbox = await screen.findByRole("listbox");
+      const options = within(listbox).getAllByRole("option");
+      expect(options.map((o) => o.textContent)).toEqual(["Read"]);
+    });
   });
 });

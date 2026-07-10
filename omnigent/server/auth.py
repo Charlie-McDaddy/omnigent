@@ -86,6 +86,10 @@ class SharingMode(str, Enum):
     - ``ON``: grants at any level (read/edit/manage) plus workspace/public read.
     - ``READ_ONLY``: grants are capped at read (view) — edit/manage grants are
       rejected; workspace/public read still allowed.
+    - ``RESTRICTED_READ_ONLY``: like ``READ_ONLY`` (grants capped at read), but
+      sessions whose working directory is a user home directory or the
+      filesystem root (see :func:`workspace_sharing_blocked`) cannot be shared
+      at all — not even read — because that cwd exposes an entire home/filesystem.
     - ``OFF``: no new grants at all.
 
     Value is the lowercase name so ``GET /v1/info`` and the
@@ -94,6 +98,7 @@ class SharingMode(str, Enum):
 
     OFF = "off"
     READ_ONLY = "read_only"
+    RESTRICTED_READ_ONLY = "restricted_read_only"
     ON = "on"
 
     @classmethod
@@ -108,6 +113,29 @@ class SharingMode(str, Enum):
             except ValueError:
                 return cls.ON
         return cls.ON
+
+
+def workspace_sharing_blocked(workspace: str | None) -> bool:
+    """True when a session's working directory is too broad to share under
+    :attr:`SharingMode.RESTRICTED_READ_ONLY` — the filesystem root or a user
+    home directory. Such a cwd exposes an entire home/filesystem, so the
+    restricted tier blocks *all* grants on the session (even read).
+
+    Recognizes the filesystem root (``/``), the common Unix/macOS home
+    layouts (``/root`` and any direct child of ``/home`` or ``/Users``, e.g.
+    ``/home/alice`` / ``/Users/bob``), and the server's own resolved home
+    (``~``). A subdirectory of a home (``/home/alice/proj``) is shareable; a
+    ``None``/empty workspace (no recorded cwd) is not blocked.
+    """
+    if not workspace:
+        return False
+    path = os.path.normpath(workspace)
+    if path == "/" or path == "/root":
+        return True
+    if path == os.path.normpath(os.path.expanduser("~")):
+        return True
+    parent, _, _leaf = path.rpartition("/")
+    return parent in ("/home", "/Users")
 
 
 def env_var_is_truthy(name: str, *, default: bool = False) -> bool:

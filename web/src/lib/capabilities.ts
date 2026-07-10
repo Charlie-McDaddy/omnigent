@@ -23,11 +23,19 @@ import { hostFetch } from "./host";
 /**
  * Server session-sharing policy (mirrors the backend ``SharingMode``):
  * ``"on"`` allows grants at any level, ``"read_only"`` caps grants at
- * view, ``"off"`` disables all new grants (the SPA hides the Share
- * control). Fails open to ``"on"`` for an unknown/missing value.
+ * view, ``"restricted_read_only"`` also caps at view but the server
+ * additionally blocks sharing sessions whose cwd is a home/root
+ * directory (enforced server-side), and ``"off"`` disables all new
+ * grants (the SPA hides the Share control). Fails open to ``"on"`` for
+ * an unknown/missing value.
  */
-export type SharingMode = "on" | "read_only" | "off";
-const _SHARING_MODES: readonly SharingMode[] = ["on", "read_only", "off"];
+export type SharingMode = "on" | "read_only" | "restricted_read_only" | "off";
+const _SHARING_MODES: readonly SharingMode[] = [
+  "on",
+  "read_only",
+  "restricted_read_only",
+  "off",
+];
 
 /** Shape of the response from ``GET /v1/info``. */
 export interface ServerInfo {

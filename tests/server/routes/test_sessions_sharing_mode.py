@@ -21,6 +21,7 @@ lifespan) since none of these paths need the runtime.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import httpx
@@ -37,6 +38,7 @@ from omnigent.server.auth import (
     AuthProvider,
     SharingMode,
     UnifiedAuthProvider,
+    workspace_sharing_blocked,
 )
 from omnigent.stores.agent_store.sqlalchemy_store import SqlAlchemyAgentStore
 from omnigent.stores.artifact_store.local import LocalArtifactStore
@@ -87,16 +89,19 @@ def _seed_owned_session(
     tmp_path: Path,
     *,
     sharing_mode: SharingMode,
+    workspace: str | None = None,
 ) -> tuple[FastAPI, str]:
     """Build an app whose ``_OWNER`` identity manages a real session.
 
     Seeds a conversation and an OWNER grant directly into the shared DB
     so ``PUT …/permissions`` gets past the manage-access check and hits
     the sharing gate (and, when allowed, actually persists the grant).
+    ``workspace`` sets the session's recorded cwd, exercising the
+    ``RESTRICTED_READ_ONLY`` home/root block.
     """
     permission_store = SqlAlchemyPermissionStore(db_uri)
     conversation_store = SqlAlchemyConversationStore(db_uri)
-    conv = conversation_store.create_conversation()
+    conv = conversation_store.create_conversation(workspace=workspace)
     permission_store.ensure_user(_OWNER)
     permission_store.grant(_OWNER, conv.id, LEVEL_OWNER)
     app = _build_app(
@@ -117,11 +122,14 @@ def _seed_owned_session(
     [
         (SharingMode.OFF, SharingMode.OFF),
         (SharingMode.READ_ONLY, SharingMode.READ_ONLY),
+        (SharingMode.RESTRICTED_READ_ONLY, SharingMode.RESTRICTED_READ_ONLY),
         (SharingMode.ON, SharingMode.ON),
         ("off", SharingMode.OFF),
         ("read_only", SharingMode.READ_ONLY),
+        ("restricted_read_only", SharingMode.RESTRICTED_READ_ONLY),
         ("on", SharingMode.ON),
         ("READ_ONLY", SharingMode.READ_ONLY),  # case-insensitive
+        ("  Restricted_Read_Only  ", SharingMode.RESTRICTED_READ_ONLY),
         (" On ", SharingMode.ON),  # whitespace-tolerant
         (None, SharingMode.ON),  # unset → fail open
         ("", SharingMode.ON),  # empty → fail open
@@ -206,6 +214,7 @@ async def test_info_reports_default_on(
     [
         (SharingMode.OFF, "off"),
         (SharingMode.READ_ONLY, "read_only"),
+        (SharingMode.RESTRICTED_READ_ONLY, "restricted_read_only"),
         (SharingMode.ON, "on"),
     ],
 )
@@ -300,3 +309,102 @@ async def test_revoke_is_unaffected_by_read_only(db_uri: str, tmp_path: Path) ->
         )
         revoke = await c.delete(f"/v1/sessions/{sid}/permissions/{_GRANTEE}")
         assert revoke.status_code == 204, revoke.text
+
+
+# ── workspace_sharing_blocked — the home/root cwd predicate ──────────
+
+
+@pytest.mark.parametrize(
+    "workspace",
+    [
+        "/",
+        "/root",
+        "/root/",  # trailing slash normalized
+        "/home/alice",
+        "/Users/bob",
+        os.path.expanduser("~"),
+    ],
+)
+def test_workspace_sharing_blocked_true(workspace: str) -> None:
+    """The filesystem root and user home dirs are blocked."""
+    assert workspace_sharing_blocked(workspace) is True
+
+
+@pytest.mark.parametrize(
+    "workspace",
+    [
+        None,  # no recorded cwd
+        "",
+        "/home/alice/project",  # a subdirectory of home is fine
+        "/Users/bob/code",
+        "/home",  # the parent container itself is not a home dir
+        "/srv/work",
+        "/tmp/session",
+    ],
+)
+def test_workspace_sharing_blocked_false(workspace: str | None) -> None:
+    """A subdirectory / arbitrary path (or no cwd) is shareable."""
+    assert workspace_sharing_blocked(workspace) is False
+
+
+# ── RESTRICTED_READ_ONLY gate — home/root cwd blocked entirely ───────
+
+
+@pytest.mark.parametrize("blocked_workspace", ["/", "/home/alice", "/root"])
+async def test_restricted_blocks_home_or_root_session_even_read(
+    db_uri: str, tmp_path: Path, blocked_workspace: str
+) -> None:
+    """RESTRICTED_READ_ONLY rejects *all* grants (even read) on a session
+    whose cwd is a home dir or the filesystem root."""
+    app, sid = _seed_owned_session(
+        db_uri,
+        tmp_path,
+        sharing_mode=SharingMode.RESTRICTED_READ_ONLY,
+        workspace=blocked_workspace,
+    )
+    async with _client(app, _OWNER) as c:
+        resp = await c.put(
+            f"/v1/sessions/{sid}/permissions",
+            json={"user_id": _GRANTEE, "level": LEVEL_READ},
+        )
+        assert resp.status_code == 403, resp.text
+        assert "cannot be shared" in resp.text.lower()
+
+
+async def test_restricted_allows_read_on_normal_session(db_uri: str, tmp_path: Path) -> None:
+    """RESTRICTED_READ_ONLY behaves like READ_ONLY for a non-home/root cwd:
+    a read grant is allowed, an edit grant is rejected."""
+    app, sid = _seed_owned_session(
+        db_uri,
+        tmp_path,
+        sharing_mode=SharingMode.RESTRICTED_READ_ONLY,
+        workspace="/home/alice/project",
+    )
+    async with _client(app, _OWNER) as c:
+        ok = await c.put(
+            f"/v1/sessions/{sid}/permissions",
+            json={"user_id": _GRANTEE, "level": LEVEL_READ},
+        )
+        assert ok.status_code == 200, ok.text
+        assert ok.json()["level"] == LEVEL_READ
+
+        denied = await c.put(
+            f"/v1/sessions/{sid}/permissions",
+            json={"user_id": _GRANTEE, "level": LEVEL_EDIT},
+        )
+        assert denied.status_code == 403, denied.text
+        assert "read-only" in denied.text.lower()
+
+
+async def test_restricted_allows_read_when_no_workspace(db_uri: str, tmp_path: Path) -> None:
+    """A session with no recorded cwd is not treated as home/root — a read
+    grant is allowed under RESTRICTED_READ_ONLY."""
+    app, sid = _seed_owned_session(
+        db_uri, tmp_path, sharing_mode=SharingMode.RESTRICTED_READ_ONLY, workspace=None
+    )
+    async with _client(app, _OWNER) as c:
+        resp = await c.put(
+            f"/v1/sessions/{sid}/permissions",
+            json={"user_id": _GRANTEE, "level": LEVEL_READ},
+        )
+        assert resp.status_code == 200, resp.text

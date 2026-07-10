@@ -156,6 +156,7 @@ from omnigent.server.auth import (
     AuthProvider,
     SharingMode,
     local_single_user_enabled,
+    workspace_sharing_blocked,
 )
 from omnigent.server.bundles import bundle_location, validate_agent_bundle
 from omnigent.server.host_registry import HostConnection, HostRegistry, RunnerExitReports
@@ -20158,7 +20159,21 @@ def create_sessions_router(
                 "Sharing has been disabled for this Omnigent server.",
                 code=ErrorCode.FORBIDDEN,
             )
-        if _sharing_mode == SharingMode.READ_ONLY and body.level > LEVEL_READ:
+        # RESTRICTED_READ_ONLY blocks sharing entirely (even read) for a session
+        # whose cwd is a home dir or the filesystem root — that workspace is too
+        # broad to expose. Other sessions fall through to the read-only cap.
+        if _sharing_mode == SharingMode.RESTRICTED_READ_ONLY:
+            _conv = await asyncio.to_thread(conversation_store.get_conversation, session_id)
+            if _conv is not None and workspace_sharing_blocked(_conv.workspace):
+                raise OmnigentError(
+                    "This session's working directory (a home or root directory) "
+                    "cannot be shared on this Omnigent server.",
+                    code=ErrorCode.FORBIDDEN,
+                )
+        if (
+            _sharing_mode in (SharingMode.READ_ONLY, SharingMode.RESTRICTED_READ_ONLY)
+            and body.level > LEVEL_READ
+        ):
             raise OmnigentError(
                 "Sharing is limited to read-only access on this Omnigent server.",
                 code=ErrorCode.FORBIDDEN,
