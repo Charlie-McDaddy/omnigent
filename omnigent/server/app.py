@@ -1140,14 +1140,17 @@ def create_app(
     :param sharing_mode: Server policy for creating new session
         permission grants (see :class:`SharingMode`): ``ON`` allows
         grants at any level plus public/workspace read, ``READ_ONLY``
-        caps grants at read (edit/manage rejected with 403), and
-        ``OFF`` rejects all new grants (403). Revoke/list and
-        self-ownership grants are unaffected in every mode.
-        Accepts a static :class:`SharingMode`, a zero-arg callable
-        resolved per request (for deployments that flip the policy at
-        runtime), or ``None`` — which defaults from the
-        ``OMNIGENT_SHARING_MODE`` env var (``on``/``read_only``/``off``),
-        failing open to ``ON`` when unset or unrecognized. Reported by
+        caps grants at read (edit/manage rejected with 403),
+        ``RESTRICTED_READ_ONLY`` additionally blocks sharing a session
+        whose working directory is a home or root directory, and ``OFF``
+        rejects all new grants (403). Only *new* grants are gated —
+        revoke/list, self-ownership grants, and existing grants are
+        unaffected in every mode. Accepts a static :class:`SharingMode`,
+        a zero-arg callable resolved per request (for deployments that
+        flip the policy at runtime), or ``None`` — which defaults from
+        the ``OMNIGENT_SHARING_MODE`` env var
+        (``on``/``read_only``/``restricted_read_only``/``off``), failing
+        open to ``ON`` when unset or unrecognized. Reported by
         ``GET /v1/info`` as ``sharing_mode`` so the web app can gate its
         Share controls to match.
     :param public_sharing: Whether public (anyone-with-the-link) read
@@ -1155,11 +1158,13 @@ def create_app(
         allowed. Orthogonal to ``sharing_mode``: a server can keep normal
         user-to-user sharing on while disabling public links. When
         disabled, granting ``__public__`` is rejected (403) and the Share
-        modal hides the "Public access" toggle. Accepts a static bool, a
-        zero-arg callable resolved per request, or ``None`` — which
-        defaults from the ``OMNIGENT_PUBLIC_SHARING`` env var (truthy),
-        failing open to enabled when unset. Reported by ``GET /v1/info``
-        as ``public_sharing_enabled``.
+        modal hides the "Public access" toggle; existing public grants
+        are unaffected. Accepts a static bool, a zero-arg callable
+        resolved per request, or ``None`` — which defaults from the
+        ``OMNIGENT_PUBLIC_SHARING`` env var (enabled unless explicitly
+        falsy — ``0``/``false``/``no``/``off``), failing open to enabled
+        when unset. Reported by ``GET /v1/info`` as
+        ``public_sharing_enabled``.
     :returns: A fully configured :class:`FastAPI` application.
     :raises ValueError: If ``permission_store`` is provided
         without an ``auth_provider``.

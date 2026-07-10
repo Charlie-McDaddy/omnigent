@@ -118,6 +118,11 @@ def create_sharing_router(
                 "No sharing settings to update.",
                 code=ErrorCode.INVALID_INPUT,
             )
+        # Validate AND authorize both fields before writing either, so a request
+        # updating both never persists one and then rejects the other (a partial
+        # apply — reachable only when a deployment makes exactly one setting
+        # file-backed and the other a managed callable).
+        mode: SharingMode | None = None
         if body.sharing_mode is not None:
             if not getattr(state, "sharing_mode_writable", False):
                 raise OmnigentError(
@@ -133,13 +138,17 @@ def create_sharing_router(
                     + ".",
                     code=ErrorCode.INVALID_INPUT,
                 ) from exc
+        if body.public_sharing is not None and not getattr(
+            state, "public_sharing_writable", False
+        ):
+            raise OmnigentError(
+                "Public access is managed by this deployment and cannot be changed here.",
+                code=ErrorCode.FORBIDDEN,
+            )
+        # All checks passed — apply the writes.
+        if mode is not None:
             await asyncio.to_thread(write_sharing_mode_override, mode)
         if body.public_sharing is not None:
-            if not getattr(state, "public_sharing_writable", False):
-                raise OmnigentError(
-                    "Public access is managed by this deployment and cannot be changed here.",
-                    code=ErrorCode.FORBIDDEN,
-                )
             await asyncio.to_thread(write_public_sharing_override, body.public_sharing)
         return _state_response(request)
 

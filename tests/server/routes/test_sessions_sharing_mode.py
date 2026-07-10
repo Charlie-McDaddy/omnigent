@@ -689,3 +689,19 @@ async def test_admin_put_public_rejected_when_not_writable(db_uri: str, tmp_path
         assert (await c.get("/v1/sharing")).json()["public_sharing_editable"] is False
         put = await c.put("/v1/sharing", json={"public_sharing": False})
         assert put.status_code == 403, put.text
+
+
+async def test_admin_put_is_atomic_across_mixed_writability(db_uri: str, tmp_path: Path) -> None:
+    """A both-fields PUT where only one setting is file-backed rejects the whole
+    request without persisting the writable half (no partial apply).
+
+    Mode is file-backed (editable); public access is deployment-managed (a
+    callable, not editable). Setting both must 403 on public *before* the mode
+    override is written.
+    """
+    app = _admin_app(db_uri, tmp_path, public_sharing=lambda: True)
+    async with _client(app, _ADMIN) as c:
+        resp = await c.put("/v1/sharing", json={"sharing_mode": "off", "public_sharing": False})
+        assert resp.status_code == 403, resp.text
+        # The writable half must NOT have been persisted (no partial apply).
+        assert read_sharing_mode_override() is None
