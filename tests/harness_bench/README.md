@@ -102,7 +102,7 @@ transport; it does not claim the harness lacks the capability.
 | Basic turn, Streaming, Model override, Interrupt | End-to-end through server + runner | End-to-end through server + runner + vendor CLI | Wrap boundary only |
 | Tool calling | Server-dispatched builtin | Vendor tool mirrored as a session item | Request-level wrap tool |
 | Policy DENY | Fixed policy in the agent spec | Session CEL policy + native policy hook | Not observable |
-| Policy ALLOW / ASK | Fixed policy; ASK observes and resolves an elicitation | Not implemented | Not observable |
+| Policy ALLOW / ASK | Fixed policy; ASK observes and resolves an elicitation | Temporary session CEL policy; ASK observes and resolves an elicitation | Not observable |
 | Cost tracking | Session snapshot | Session snapshot when the vendor forwards usage | Completed-response usage when forwarded |
 
 The bench is a headless client of the server API. It verifies the contract the
@@ -155,7 +155,6 @@ inside drivers so probes remain harness-agnostic.
 
 ## Current gaps
 
-- Policy ALLOW and ASK are not yet observable on `native-tui`.
 - Native agent seeding in the server is still hardcoded rather than driven by
   the harness registry, which limits community-native end-to-end execution.
 - Some native harnesses require vendor login/provider setup that the bench
