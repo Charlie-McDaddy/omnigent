@@ -256,20 +256,22 @@ class FullServerDriver:
                         if stop.is_set():
                             return
                         line = raw.strip()
-                        if line.startswith("data:"):
-                            payload = line[len("data:") :].strip()
-                            if '"response.elicitation_request"' in payload:
-                                result.elicitation_requested = True
-                                try:
-                                    eid = json.loads(payload).get("elicitation_id")
-                                    if isinstance(eid, str):
-                                        elicitation_id["id"] = eid
-                                except (ValueError, TypeError):
-                                    # Verdict already recorded; unparseable id
-                                    # just means we can't resolve, so the turn
-                                    # parks to the deadline. Note it.
-                                    result.error = "elicitation_request frame had no parseable id"
-                                return
+                        if not line.startswith("data:"):
+                            continue
+                        try:
+                            frame = json.loads(line[len("data:") :].strip())
+                        except (ValueError, TypeError):
+                            continue
+                        if frame.get("type") == "response.elicitation_request":
+                            result.elicitation_requested = True
+                            eid = frame.get("elicitation_id")
+                            if isinstance(eid, str):
+                                elicitation_id["id"] = eid
+                            else:
+                                # No parseable id: verdict is recorded, but we
+                                # can't resolve, so the turn parks to the deadline.
+                                result.error = "elicitation_request frame had no parseable id"
+                            return
             except httpx.HTTPError:
                 # Best-effort watcher; an SSE read error must not fail the turn.
                 pass
