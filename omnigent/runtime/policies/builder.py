@@ -89,12 +89,16 @@ _DEFAULT_POLICY_SPECS_CACHE: cachetools.TTLCache[int, list[PolicySpec]] = cachet
     maxsize=256, ttl=30
 )
 
-# Invalidation-based cache of ``(workspace_id, conversation_id) -> list[PolicySpec]``
+# Invalidation-based LRU cache of ``(workspace_id, conversation_id) -> list[PolicySpec]``
 # for session-scoped policies. Unlike defaults, session policies can be added
 # mid-session (via sys_add_policy), so a TTL would delay enforcement. Instead,
 # the cache is explicitly invalidated whenever a session policy is mutated via
 # the CRUD routes. Keyed by workspace to prevent cross-tenant leakage.
-_SESSION_POLICY_SPECS_CACHE: dict[tuple[int, str], list[PolicySpec]] = {}
+# Bounded (LRU, 4096 entries) to match _SESSION_OWNER_CACHE and prevent unbounded
+# growth — LRU eviction handles sessions that end without any policy mutation.
+_SESSION_POLICY_SPECS_CACHE: cachetools.LRUCache[tuple[int, str], list[PolicySpec]] = (
+    cachetools.LRUCache(maxsize=4096)
+)
 
 
 def _needs_user_daily_cost(specs: list[PolicySpec]) -> bool:
