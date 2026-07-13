@@ -303,13 +303,9 @@ class SessionResourceRegistry:
         # lifecycle relationship so the runner can decide whether the owning
         # session should fail.
         self._terminal_exit_publisher: Callable[[TerminalExitEvent], None] | None = None
-        # Live ``_handle_terminal_exit`` tasks plus a "a task was scheduled"
-        # signal. A terminal exit hops from the watcher thread onto the loop via
-        # ``call_soon_threadsafe``, so the cleanup task materializes only after
-        # the loop turns. The set keeps a strong reference to the otherwise
-        # fire-and-forget task (so the loop can't drop it mid-flight); the event
-        # lets callers on the loop await that scheduling + completion instead of
-        # polling. Entries self-remove on completion.
+        # Strong reference to the fire-and-forget terminal-exit cleanup tasks,
+        # plus an event so loop-side callers can await scheduling/completion
+        # instead of polling. Entries self-remove on completion.
         self._terminal_exit_tasks: set[asyncio.Task[None]] = set()
         self._terminal_exit_scheduled: asyncio.Event = asyncio.Event()
 
@@ -370,19 +366,11 @@ class SessionResourceRegistry:
         self._terminal_exit_publisher = publisher
 
     async def wait_for_terminal_exit_cleanup(self) -> None:
-        """Await the next scheduled terminal-exit cleanup task to completion.
+        """Await the scheduled terminal-exit cleanup to completion so its
+        ``session.resource.deleted`` publish is observable without polling.
 
-        A terminal exit hops from the watcher thread onto the loop via
-        ``call_soon_threadsafe``, so the ``_handle_terminal_exit`` task
-        materializes only after the loop turns. Awaiting the "scheduled" event
-        first lets the loop run that scheduling callback; then the tracked task
-        is awaited so the ``session.resource.deleted`` publish (and the harness
-        release it spawns) is observable without polling. Intended for tests
-        that need to synchronize on the fan-out deterministically.
-
-        Single-shot: the "scheduled" event is never cleared, so a second call
-        returns immediately. Use it to synchronize on one terminal exit, not a
-        sequence of them.
+        Single-shot: the "scheduled" event is never cleared, so this
+        synchronizes on one terminal exit, not a sequence of them.
         """
         await self._terminal_exit_scheduled.wait()
         tasks = list(self._terminal_exit_tasks)

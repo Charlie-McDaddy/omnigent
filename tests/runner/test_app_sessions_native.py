@@ -11090,17 +11090,8 @@ async def test_required_terminal_exit_while_idle_does_not_fail_session(tmp_path:
         on_exit = callbacks.get("on_exit")
         assert callable(on_exit)
         on_exit()
-        # Terminal-exit cleanup fans out across two background tasks scheduled
-        # onto the loop: ``_handle_terminal_exit`` publishes the resource events
-        # and, from inside that same publish, spawns a second task that releases
-        # the harness subprocess. Await the cleanup deterministically instead of
-        # polling — the registry signals when its cleanup task is scheduled and
-        # exposes it, so awaiting drives the publish (the ``deleted`` event is
-        # enqueued and the release task is created) to completion regardless of
-        # event-loop scheduling. The release task is created synchronously
-        # inside that publish, so once the cleanup task is awaited it is either
-        # already done (``pm.released`` set) or still pending; await any pending
-        # instance so the release is observed by construction, not by a drain.
+        # Await terminal-exit cleanup deterministically instead of polling;
+        # then await any pending harness-release task so ``pm.released`` is set.
         await resource_registry.wait_for_terminal_exit_cleanup()
         release_task_name = f"required-terminal-release:{conv_id}"
         pending_release = [
@@ -11285,15 +11276,8 @@ async def test_external_idle_status_makes_required_terminal_exit_clean(tmp_path:
         on_exit = callbacks.get("on_exit")
         assert callable(on_exit)
         on_exit()
-        # Await the terminal-exit cleanup deterministically instead of polling
-        # (see the primary idle-exit test): the registry signals when its
-        # cleanup task is scheduled, so awaiting drives the publish (the
-        # ``deleted`` event is enqueued and the release task is created) to
-        # completion regardless of event-loop scheduling. The release task is
-        # created synchronously inside that publish, so once the cleanup task is
-        # awaited it is either already done (``pm.released`` set) or still
-        # pending; await any pending instance so the release is observed by
-        # construction, not by racing a drain.
+        # Await terminal-exit cleanup deterministically instead of polling;
+        # then await any pending harness-release task so ``pm.released`` is set.
         await resource_registry.wait_for_terminal_exit_cleanup()
         release_task_name = f"required-terminal-release:{conv_id}"
         pending_release = [
