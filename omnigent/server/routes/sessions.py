@@ -12590,8 +12590,7 @@ async def _create_session_from_existing_agent(
             _install_id = _get_installation_id()
             _anon_uid: str | None = None
             if user_id is not None:
-                _user_hash = _hashlib.sha256(user_id.encode()).hexdigest()[:16]
-                _anon_uid = f"{_install_id}_{_user_hash}" if _install_id else _user_hash
+                _anon_uid = _hashlib.sha256(user_id.encode()).hexdigest()[:16]
             _tel_emit(
                 _TelSessionCreatedEvent(
                     session_id=conv.id,
@@ -19367,8 +19366,7 @@ def create_sessions_router(
                 _srv_id = _get_installation_id()
                 _anon: str | None = None
                 if user_id is not None:
-                    _user_hash = _hashlib.sha256(user_id.encode()).hexdigest()[:16]
-                    _anon = f"{_srv_id}_{_user_hash}" if _srv_id else _user_hash
+                    _anon = _hashlib.sha256(user_id.encode()).hexdigest()[:16]
                 _tel_emit(
                     _TelSessionStoppedEvent(
                         session_id=session_id,
@@ -20421,8 +20419,7 @@ def create_sessions_router(
             _srv_id = _get_installation_id()
             _anon_d: str | None = None
             if user_id is not None:
-                _user_hash_d = _hashlib.sha256(user_id.encode()).hexdigest()[:16]
-                _anon_d = f"{_srv_id}_{_user_hash_d}" if _srv_id else _user_hash_d
+                _anon_d = _hashlib.sha256(user_id.encode()).hexdigest()[:16]
             _usage = conv.session_usage or {}
             _duration: float | None = None
             with contextlib.suppress(Exception):
