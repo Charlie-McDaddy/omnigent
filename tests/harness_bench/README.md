@@ -22,6 +22,13 @@ python -m tests.harness_bench --harness codex --dimension reasoning
 # Pin one harness to an exact model for this run.
 python -m tests.harness_bench --harness codex --model system.ai.gpt-5-6-sol
 
+# Pin every harness in a multi-harness run explicitly.
+python -m tests.harness_bench \
+  --harness codex \
+  --harness claude-sdk \
+  --model codex=system.ai.gpt-5-6-sol \
+  --model claude-sdk=databricks-claude-opus-4-8
+
 # Override the configured/ambient Databricks profile.
 python -m tests.harness_bench --harness codex --profile my-profile
 
@@ -48,9 +55,11 @@ non-zero exit means at least one `DRIFT` cell was found.
   or pass a comma-separated list. Names use the identifiers shown by
   `--list-dimensions`; `basic_turn` is added automatically as the
   exercisability prerequisite.
-- `--model MODEL` -- replace the selected profile's model for this run. Requires
-  exactly one explicit `--harness`; this is the simple alternative to test
-  model-pool environment variables.
+- `--model [HARNESS=]MODEL` -- replace selected profile models for this run.
+  With one explicit harness, bare `MODEL` is shorthand. With multiple
+  harnesses, repeat `HARNESS=MODEL` and provide exactly one mapping for every
+  selected resolved harness. This is the simple alternative to test model-pool
+  environment variables.
 - `--list-dimensions` -- list dimension identifiers, display titles, and
   priorities.
 - `--fast` -- run SDK harnesses on `sdk-inproc` instead of the `full-server`

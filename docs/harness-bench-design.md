@@ -223,8 +223,10 @@ The CLI can slice this catalog with repeatable or comma-separated
 `--dimension` values. A slice always includes `basic_turn` because it proves
 the harness is exercisable before interpreting another probe's result. Reports
 and the live Rich grid contain only the selected columns. `--model` provides a
-direct per-run model override when exactly one harness is selected, avoiding
-test model-pool environment variables for focused manual checks.
+direct per-run model override, avoiding test model-pool environment variables
+for focused manual checks. A single harness accepts bare `--model MODEL`;
+multi-harness runs use complete, explicit `--model HARNESS=MODEL` mappings so a
+model is never assigned to the wrong harness family by position or omission.
 
 ### Illustrative probe shape
 

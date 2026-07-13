@@ -39,9 +39,10 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        metavar="MODEL",
-        help="Model override for this bench run. Requires exactly one --harness; "
-        "replaces the profile model without model-pool environment variables.",
+        action="append",
+        metavar="[HARNESS=]MODEL",
+        help="Model override (repeatable). One harness accepts bare MODEL. "
+        "Multiple harnesses require HARNESS=MODEL for every selected harness.",
     )
     parser.add_argument(
         "--profile",
@@ -155,6 +156,46 @@ def _resolve_probes(values: list[str] | None) -> list[CapabilityProbe]:
     return [probe for probe in ALL_PROBES if probe.name in selected]
 
 
+def _apply_model_overrides(
+    profiles: list[BenchProfile],
+    harness_args: list[str] | None,
+    values: list[str] | None,
+) -> list[BenchProfile]:
+    if not values:
+        return profiles
+    if harness_args is None:
+        raise ValueError("--model requires at least one explicit --harness")
+    if len(profiles) == 1 and len(values) == 1 and "=" not in values[0]:
+        model = values[0].strip()
+        if not model:
+            raise ValueError("--model cannot be empty")
+        return [replace(profiles[0], model=model)]
+
+    selected = [profile.harness for profile in profiles]
+    if len(set(selected)) != len(selected):
+        raise ValueError("model mappings require unique --harness selections")
+    mappings: dict[str, str] = {}
+    for value in values:
+        harness, separator, model = value.partition("=")
+        harness = harness.strip()
+        model = model.strip()
+        if not separator or not harness or not model:
+            raise ValueError(
+                "multiple harnesses require --model HARNESS=MODEL for every selected harness"
+            )
+        if harness in mappings:
+            raise ValueError(f"duplicate --model mapping for harness {harness!r}")
+        mappings[harness] = model
+
+    unknown = sorted(mappings.keys() - set(selected))
+    if unknown:
+        raise ValueError(f"--model mapping names unselected harness {unknown[0]!r}")
+    missing = [harness for harness in selected if harness not in mappings]
+    if missing:
+        raise ValueError(f"missing --model mapping for selected harness {missing[0]!r}")
+    return [replace(profile, model=mappings[profile.harness]) for profile in profiles]
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv if argv is not None else sys.argv[1:])
 
@@ -176,11 +217,11 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
-    if args.model is not None:
-        if args.harness is None or len(profiles) != 1:
-            print("--model requires exactly one --harness", file=sys.stderr)
-            return 2
-        profiles = [replace(profiles[0], model=args.model)]
+    try:
+        profiles = _apply_model_overrides(profiles, args.harness, args.model)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
     if args.transport is not None and args.transport not in driver_registry():
         known = ", ".join(sorted(driver_registry()))
