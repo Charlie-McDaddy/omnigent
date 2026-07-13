@@ -5,10 +5,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from dataclasses import replace
 
 from tests.harness_bench.bench import run_bench
 from tests.harness_bench.events import LineSink
 from tests.harness_bench.manifest import OFFICIAL_PROFILES
+from tests.harness_bench.probes import ALL_PROBES, PROBES_BY_NAME, CapabilityProbe
 from tests.harness_bench.profile import BenchProfile, resolve_profile
 from tests.harness_bench.report import render_json, render_markdown, render_table
 from tests.harness_bench.transport import driver_registry, resolve_transport_name
@@ -26,6 +28,20 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         help="Harness to probe (repeatable). An official name, or a "
         "'module:attr' / 'module.ATTR' reference to a community "
         "BenchProfile. Defaults to every official harness.",
+    )
+    parser.add_argument(
+        "--dimension",
+        action="append",
+        metavar="NAME[,NAME...]",
+        help="Capability dimension to run (repeatable or comma-separated), e.g. "
+        "'reasoning' or 'streaming,reasoning'. Basic turn is included as the "
+        "exercisability prerequisite. Defaults to every dimension.",
+    )
+    parser.add_argument(
+        "--model",
+        metavar="MODEL",
+        help="Model override for this bench run. Requires exactly one --harness; "
+        "replaces the profile model without model-pool environment variables.",
     )
     parser.add_argument(
         "--profile",
@@ -110,6 +126,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "--markdown, else inferred from the extension (.json / .md), else plain text.",
     )
     parser.add_argument("--list", action="store_true", help="List official harnesses and exit.")
+    parser.add_argument(
+        "--list-dimensions", action="store_true", help="List capability dimensions and exit."
+    )
     return parser.parse_args(argv)
 
 
@@ -117,6 +136,23 @@ def _resolve_profiles(names: list[str] | None) -> list[BenchProfile]:
     if not names:
         return list(OFFICIAL_PROFILES.values())
     return [resolve_profile(name) for name in names]
+
+
+def _resolve_probes(values: list[str] | None) -> list[CapabilityProbe]:
+    if not values:
+        return ALL_PROBES
+    requested = [
+        name.strip().lower().replace("-", "_") for value in values for name in value.split(",")
+    ]
+    requested = [name for name in requested if name]
+    unknown = sorted(set(requested) - PROBES_BY_NAME.keys())
+    if unknown:
+        known = ", ".join(PROBES_BY_NAME)
+        raise KeyError(f"unknown --dimension {unknown[0]!r}; known dimensions: {known}")
+    selected = set(requested)
+    if selected != {"basic_turn"}:
+        selected.add("basic_turn")
+    return [probe for probe in ALL_PROBES if probe.name in selected]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -128,11 +164,23 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{name}\t{transport}\t{profile.model}")
         return 0
 
+    if args.list_dimensions:
+        for probe in ALL_PROBES:
+            print(f"{probe.name}\t{probe.title}\t{probe.priority.value}")
+        return 0
+
     try:
         profiles = _resolve_profiles(args.harness)
+        probes = _resolve_probes(args.dimension)
     except KeyError as exc:
         print(str(exc), file=sys.stderr)
         return 2
+
+    if args.model is not None:
+        if args.harness is None or len(profiles) != 1:
+            print("--model requires exactly one --harness", file=sys.stderr)
+            return 2
+        profiles = [replace(profiles[0], model=args.model)]
 
     if args.transport is not None and args.transport not in driver_registry():
         known = ", ".join(sorted(driver_registry()))
@@ -155,11 +203,12 @@ def main(argv: list[str] | None = None) -> int:
 
     sink = None
     if live:
-        sink = _select_progress_sink(args.rich)
+        sink = _select_progress_sink(args.rich, probes=probes)
 
     matrix = asyncio.run(
         run_bench(
             profiles,
+            probes=probes,
             databricks_profile=args.profile,
             live=live,
             transport=args.transport,
@@ -199,7 +248,7 @@ def _grid_already_shown(sink) -> bool:
     return bool(getattr(sink, "drew_grid", False))
 
 
-def _select_progress_sink(rich_flag: bool | None):
+def _select_progress_sink(rich_flag: bool | None, *, probes: list[CapabilityProbe] | None = None):
     """Pick the progress sink for a live run.
 
     ``rich_flag``: ``True`` forces rich, ``False`` forces plain, ``None`` =
@@ -213,7 +262,7 @@ def _select_progress_sink(rich_flag: bool | None):
     if rich_flag is not False:
         from tests.harness_bench.richreport import rich_sink_or_none
 
-        rich_sink = rich_sink_or_none(force=bool(rich_flag))
+        rich_sink = rich_sink_or_none(force=bool(rich_flag), probes=probes)
         if rich_sink is not None:
             return rich_sink
         if rich_flag is True:

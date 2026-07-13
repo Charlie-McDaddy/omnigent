@@ -16,6 +16,12 @@ python -m tests.harness_bench --no-live
 # Probe one harness. Credentials are resolved like `omni run`.
 python -m tests.harness_bench --harness codex
 
+# Run only Reasoning (plus its automatic Basic turn prerequisite).
+python -m tests.harness_bench --harness codex --dimension reasoning
+
+# Pin one harness to an exact model for this run.
+python -m tests.harness_bench --harness codex --model system.ai.gpt-5-6-sol
+
 # Override the configured/ambient Databricks profile.
 python -m tests.harness_bench --harness codex --profile my-profile
 
@@ -38,6 +44,15 @@ non-zero exit means at least one `DRIFT` cell was found.
 - `--harness NAME` -- probe one harness (repeatable). Accepts an official name
   or a `module:attr` / `module.ATTR` reference to a community `BenchProfile`.
   Defaults to every official harness.
+- `--dimension NAME[,NAME...]` -- run only selected dimensions. Repeat the flag
+  or pass a comma-separated list. Names use the identifiers shown by
+  `--list-dimensions`; `basic_turn` is added automatically as the
+  exercisability prerequisite.
+- `--model MODEL` -- replace the selected profile's model for this run. Requires
+  exactly one explicit `--harness`; this is the simple alternative to test
+  model-pool environment variables.
+- `--list-dimensions` -- list dimension identifiers, display titles, and
+  priorities.
 - `--fast` -- run SDK harnesses on `sdk-inproc` instead of the `full-server`
   default. This skips server startup, but policy ALLOW/ASK/DENY are not
   observable and tool/cost verdicts are limited to what the wrap forwards.
