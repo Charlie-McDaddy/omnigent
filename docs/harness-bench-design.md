@@ -204,6 +204,7 @@ Validated for presence and shape only: `Owner`, `Transport`, `Implementation`,
 | Basic turn (P0 prerequisite) | complete a marker-echo turn and require assistant text |
 | Fork replay (P1) | clone the session after Basic turn, require copied marker history, and require the clone to recall it |
 | Streaming (P0) | count output-text deltas; repeated single-delta output is `PARTIAL` |
+| Reasoning (P1) | request high effort and require a forwarded reasoning delta or persisted reasoning item; no observation is inconclusive because the model may emit none |
 | Tool calling (P0) | provoke the transport's tool mechanism and require a surfaced call |
 | Omnigent MCP (P1, native only) | call read-only `sys_session_list` through the generated `omnigent` MCP relay and require a matching function-call item |
 | Policy DENY (P0) | apply a tool-call deny and require a blocked-call signal |
@@ -213,8 +214,7 @@ Validated for presence and shape only: `Owner`, `Transport`, `Implementation`,
 | Cost tracking (P1) | read priced cost or token usage from the turn/session |
 | Interrupt (P0) | interrupt a long turn and require cancellation or early termination |
 
-Planned dimensions are steering, live queue, resume, reasoning, images,
-and compaction.
+Planned dimensions are steering, live queue, resume, images, and compaction.
 
 Every behavioral probe also reads the corresponding declared flag and returns
 `DRIFT` when observed disagrees with declared.
@@ -268,7 +268,7 @@ The bench on `main` includes:
 
 - **Six P0 probes:** Basic turn, Streaming, Tool calling, Policy DENY, Model
   override, and Interrupt.
-- **Five P1 probes:** Fork replay, Omnigent MCP, Policy ALLOW, Policy ASK, and Cost tracking. P1 verdicts
+- **Six P1 probes:** Fork replay, Reasoning, Omnigent MCP, Policy ALLOW, Policy ASK, and Cost tracking. P1 verdicts
   are report-only and do not gate the same way as P0 declarations.
 - **Three transport drivers:** `full-server`, `native-tui`, and `sdk-inproc`,
   selected by harness family with `--transport` and `--fast` overrides.
@@ -289,7 +289,7 @@ The bench on `main` includes:
 ### Not yet wired
 
 - Registry-driven server seeding for community native UI agents.
-- Steering, live queue, resume, reasoning, images, and compaction probes.
+- Steering, live queue, resume, images, and compaction probes.
 - Automatic provisioning of vendor login/provider configuration for native
   harnesses; unavailable environments skip cleanly.
 
@@ -351,7 +351,7 @@ stream, the bench flags a real drift on the next run, rather than a false
 
 | Dimension | `sdk-inproc` (`--fast`) | `full-server` (SDK default) | `native-tui` |
 |---|---|---|---|
-| Basic turn, Streaming, Model override, Interrupt | Wrap-level observation | End-to-end server/runner observation | End-to-end server/runner/vendor observation |
+| Basic turn, Streaming, Reasoning, Model override, Interrupt | Wrap-level observation; reasoning effort is set per request | End-to-end server/runner observation; reasoning effort is set on the session | End-to-end server/runner/vendor observation; reasoning effort is set on the session |
 | Fork replay | Not observable | Clone + copied-history replay through server/runner | Clone + copied-history replay through server/runner/vendor |
 | Tool calling | Request-level wrap tool | Server-dispatched builtin | Vendor tool mirrored into session items |
 | Omnigent MCP | Not applicable | Not applicable | Generated `omnigent` MCP relay when supported by the vendor |
