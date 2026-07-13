@@ -13,7 +13,12 @@ from typing import Any
 import httpx
 
 from tests.e2e._harness_probes import cli_unavailable_reason
-from tests.harness_bench.driver import ForkResult, TurnResult, fill_snapshot_cost
+from tests.harness_bench.driver import (
+    REASONING_PROMPT,
+    ForkResult,
+    TurnResult,
+    fill_snapshot_cost,
+)
 from tests.harness_bench.full_server import (
     _DENY_REASON,
     _POLL_INTERVAL_S,
@@ -41,7 +46,6 @@ _LONG_PROMPT = (
 _STREAM_PROMPT = (
     "Count from 1 to 30 in words, one number per line, and add a short note after each."
 )
-_REASONING_PROMPT = "Compute 17 multiplied by 23. Reply with only the final number."
 _REASONING_DELTA_EVENTS = frozenset(
     {
         "response.reasoning.delta",
@@ -406,7 +410,7 @@ class FullServerDriver:
             json={"reasoning_effort": "high"},
         )
         updated.raise_for_status()
-        result = self.streaming_probe_turn(prompt=_REASONING_PROMPT)
+        result = self.streaming_probe_turn(prompt=REASONING_PROMPT)
         result.reasoning_item_count = max(0, self._reasoning_item_count() - before)
         return result
 

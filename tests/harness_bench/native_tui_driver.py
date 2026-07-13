@@ -33,6 +33,7 @@ from tests._helpers.compat import apply_runner_env, compat_runner_cwd, runner_ex
 from tests._helpers.live_server import find_free_port
 from tests.e2e._harness_probes import cli_unavailable_reason
 from tests.harness_bench.driver import (
+    REASONING_PROMPT,
     ForkResult,
     ProvisioningError,
     TurnResult,
@@ -67,7 +68,6 @@ _TURN_TIMEOUT_S = 60.0
 _FORWARDER_READY_TIMEOUT_S = 45.0
 
 _STREAM_PROMPT = "Count from 1 to 20 in words, one per line."
-_REASONING_PROMPT = "Compute 17 multiplied by 23. Reply with only the final number."
 _LONG_PROMPT = "Write a detailed 500-word essay about the history of computing."
 
 # ``response.completed`` precedes native text deltas; output_item.done is terminal.
@@ -523,7 +523,7 @@ class NativeTuiDriver:
             json={"reasoning_effort": "high"},
         )
         updated.raise_for_status()
-        result = self._drive_turn(_REASONING_PROMPT, count_deltas=True)
+        result = self._drive_turn(REASONING_PROMPT, count_deltas=True)
         result.reasoning_item_count = max(0, self._reasoning_item_count() - before)
         return result
 

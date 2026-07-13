@@ -33,7 +33,12 @@ _CONV_ID = "conv_bench"
 _STREAM_PROMPT = (
     "Count from 1 to 30 in words, one number per line, and add a short note after each."
 )
-_REASONING_PROMPT = "Compute 17 multiplied by 23. Reply with only the final number."
+REASONING_PROMPT = (
+    "Solve this constraint problem carefully: five tasks A, B, C, D, and E must be "
+    "ordered so that A is before C, D is immediately before B, E is not first or last, "
+    "and C is after E. Give one valid ordering and briefly explain how it satisfies every "
+    "constraint."
+)
 _LONG_PROMPT = (
     "Write a very detailed 600-word essay about the history of computing, in full paragraphs."
 )
@@ -287,7 +292,7 @@ class SdkInprocDriver:
         return await self.run_turn(_STREAM_PROMPT)
 
     async def run_reasoning_turn(self) -> TurnResult:
-        return await self.run_turn(_REASONING_PROMPT, reasoning_effort="high")
+        return await self.run_turn(REASONING_PROMPT, reasoning_effort="high")
 
     async def run_tool_turn(self, *, deny: bool) -> TurnResult:
         """Provoke a tool call and optionally deny its policy evaluation."""
