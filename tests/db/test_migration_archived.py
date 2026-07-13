@@ -79,15 +79,15 @@ def test_archived_defaults_false_on_insert(db_engine: Engine) -> None:
                 "(id, created_at, updated_at, root_conversation_id) "
                 "VALUES (:id, :ts, :ts, :id)"
             ),
-            {"id": "conv_arch_default", "ts": 1700000000},
+            {"id": "a286a63f38f8f5fdf8ccf8486ade862a", "ts": 1700000000},
         )
         conn.execute(
             sa.text("INSERT INTO omnigent_conversation_metadata (id, kind) VALUES (:id, 1)"),
-            {"id": "conv_arch_default"},
+            {"id": "a286a63f38f8f5fdf8ccf8486ade862a"},
         )
         conn.commit()
         value = conn.execute(
             sa.text("SELECT archived FROM omnigent_conversation_metadata WHERE id = :id"),
-            {"id": "conv_arch_default"},
+            {"id": "a286a63f38f8f5fdf8ccf8486ade862a"},
         ).scalar_one()
         assert value == 0, f"Expected archived to default to 0 (false); got {value!r}."

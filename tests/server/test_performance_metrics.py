@@ -373,7 +373,7 @@ def test_request_duration_access_formatter_appends_individual_duration() -> None
         args=(
             "10.125.55.247:0",
             "GET",
-            "/health?session_ids=conv_one%2Cconv_two",
+            "/health?session_ids=dbb8b733fdfaca2c150b42317d3829f6%2Cconv_two",
             "1.1",
             200,
         ),
@@ -384,12 +384,12 @@ def test_request_duration_access_formatter_appends_individual_duration() -> None
     try:
         assert formatter.format(record) == (
             'INFO:     10.125.55.247:0 - "GET '
-            '/health?session_ids=conv_one%2Cconv_two HTTP/1.1" '
+            '/health?session_ids=dbb8b733fdfaca2c150b42317d3829f6%2Cconv_two HTTP/1.1" '
             "200 OK 123.5ms"
         )
         assert formatter.format(record) == (
             'INFO:     10.125.55.247:0 - "GET '
-            '/health?session_ids=conv_one%2Cconv_two HTTP/1.1" '
+            '/health?session_ids=dbb8b733fdfaca2c150b42317d3829f6%2Cconv_two HTTP/1.1" '
             "200 OK"
         )
     finally:
@@ -434,7 +434,7 @@ def _make_access_record() -> logging.LogRecord:
         args=(
             "10.0.0.1:0",
             "GET",
-            "/v1/sessions/conv_abc/events",
+            "/v1/sessions/4e92b5a0c0ee6db3f874f9c4a3f855a5/events",
             "1.1",
             200,
         ),
@@ -537,11 +537,11 @@ def test_access_formatter_sanitizes_session_id_control_chars() -> None:
 
     # \x1b (ANSI ESC) survives Starlette's URL path parsing; ensure it
     # cannot reach the log line unescaped.
-    set_request_session_id_for_access_log("conv_abc\x1b[31m")
+    set_request_session_id_for_access_log("4e92b5a0c0ee6db3f874f9c4a3f855a5\x1b[31m")
     try:
         output = formatter.format(record)
         assert "\x1b" not in output
-        assert "sid=conv_abc?[31m" in output
+        assert "sid=4e92b5a0c0ee6db3f874f9c4a3f855a5?[31m" in output
     finally:
         set_request_session_id_for_access_log(None)
 
@@ -551,10 +551,10 @@ def test_access_formatter_includes_session_id() -> None:
     formatter = _make_formatter()
     record = _make_access_record()
 
-    set_request_session_id_for_access_log("conv_abc")
+    set_request_session_id_for_access_log("4e92b5a0c0ee6db3f874f9c4a3f855a5")
     try:
         output = formatter.format(record)
-        assert "sid=conv_abc" in output
+        assert "sid=4e92b5a0c0ee6db3f874f9c4a3f855a5" in output
     finally:
         set_request_session_id_for_access_log(None)
 
@@ -567,13 +567,13 @@ def test_access_formatter_includes_all_fields() -> None:
     set_request_duration_for_access_log(0.005)
     set_request_id_for_access_log("deadbeef")
     set_request_user_agent_for_access_log("curl/8.0")
-    set_request_session_id_for_access_log("conv_xyz")
+    set_request_session_id_for_access_log("12b8fd5b4413ededb99560e847b32b0e")
     try:
         output = formatter.format(record)
         assert "5.0ms" in output
         assert "rid=deadbeef" in output
         assert 'ua="curl/8.0"' in output
-        assert "sid=conv_xyz" in output
+        assert "sid=12b8fd5b4413ededb99560e847b32b0e" in output
         # Verify ordering: duration before rid before ua before sid.
         dur_pos = output.index("5.0ms")
         rid_pos = output.index("rid=")
@@ -594,12 +594,12 @@ def test_access_formatter_clears_context_after_format() -> None:
 
     set_request_id_for_access_log("first_req")
     set_request_user_agent_for_access_log("test-agent/1.0")
-    set_request_session_id_for_access_log("conv_123")
+    set_request_session_id_for_access_log("0099dc8be6d82871e2e450424d46d1b7")
 
     first = formatter.format(record)
     assert "rid=first_req" in first
     assert 'ua="test-agent/1.0"' in first
-    assert "sid=conv_123" in first
+    assert "sid=0099dc8be6d82871e2e450424d46d1b7" in first
 
     second = formatter.format(record)
     assert "rid=" not in second
@@ -696,10 +696,10 @@ async def test_middleware_extracts_session_id_from_path(
     monkeypatch.setattr(server_app, "set_request_session_id_for_access_log", spy_sid)
 
     # This will 404 but the middleware still runs and extracts the ID.
-    await client.get("/v1/sessions/conv_test123/events")
+    await client.get("/v1/sessions/f1e474b72d312d097f70946083f44bfb/events")
 
     assert len(captured_sids) == 1
-    assert captured_sids[0] == "conv_test123"
+    assert captured_sids[0] == "f1e474b72d312d097f70946083f44bfb"
 
 
 def test_otel_publisher_emits_snapshot_values_and_counter_deltas() -> None:
@@ -888,7 +888,9 @@ async def test_create_app_metrics_middleware_counts_http_requests(
 
     resp = await client.get(
         "/health",
-        params={"session_ids": "conv_one,conv_two"},
+        params={
+            "session_ids": "dbb8b733fdfaca2c150b42317d3829f6,f8fb0016d56510e7e6b3ee8618d78415"
+        },
     )
 
     after = app.state.server_metrics.snapshot()
@@ -924,7 +926,7 @@ def test_request_route_template_for_metrics_uses_sentinel_for_unmatched_routes()
     scope: Scope = {
         "type": "http",
         "method": "GET",
-        "path": "/scanner/probe/conv_1234567890abcdef",
+        "path": "/scanner/probe/b43dec187cf001e1a717e805c8460a1b",
         "headers": [],
         "query_string": b"",
     }

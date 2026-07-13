@@ -41,7 +41,7 @@ pytestmark = [
     pytest.mark.flaky(reruns=2, reruns_delay=1),
 ]
 
-_HOST_ID = "host_wt_test"
+_HOST_ID = "7f6bda8f5e302e51cee65f7094f3d49e"
 _HOST_NAME = "wt-test-laptop"
 
 

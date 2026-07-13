@@ -45,7 +45,7 @@ from tests.server.helpers import (
 
 pytestmark = pytest.mark.asyncio
 
-_HOST_ID = "host_binding_test"
+_HOST_ID = "3f866cafac81246fb60ae6ceb1a738da"
 
 
 def _websocket_scope(path: str) -> dict[str, object]:
@@ -563,7 +563,11 @@ async def test_managed_session_create_validator_errors_serialize_as_422(
     """
     resp = await managed_session_env.client.post(
         "/v1/sessions",
-        json={"agent_id": "ag_x", "host_type": "managed", "workspace": "/tmp/w"},
+        json={
+            "agent_id": "d7a89f58205a70539a16fa4b7bd06270",
+            "host_type": "managed",
+            "workspace": "/tmp/w",
+        },
     )
     assert resp.status_code == 422, resp.text
     detail = resp.json()["detail"]
