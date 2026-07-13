@@ -38,19 +38,19 @@ def polly_spec() -> AgentSpec:
 
 def test_orchestrator_executor(polly_spec: AgentSpec) -> None:
     """
-    The orchestrator runs on claude-sdk with a 1M window and a ``sonnet``
-    alias pin for faster planning. Auth still comes from whatever Claude
-    provider the user configured via ``omnigent setup --no-internal-beta``
-    (Anthropic key, subscription, gateway, or Databricks). The pin is Claude
-    Code's version-agnostic ``sonnet`` alias — concrete ``claude-sonnet-*``
-    ids 404 under API-key auth, while ``sonnet`` resolves to the provider's
-    current Sonnet.
+    The orchestrator runs on claude-sdk with a 1M window and **no pinned
+    model or profile**, so it inherits whatever Claude provider the user
+    configured via ``omnigent setup --no-internal-beta`` (Anthropic key,
+    subscription, gateway, or Databricks) and resolves that provider's
+    default Claude model.
 
-    The old ``databricks-gpt-5-4`` fallback crash that an accidental GPT pin
-    papered over is fixed at the root in ``chat.py``
-    ``_spec_declares_harness_or_model``, which recognizes the nested
-    ``executor.config.harness`` and so never injects the ad-hoc default.
-    Fail here if the ``sonnet`` pin regresses or a Databricks-only id sneaks in.
+    Un-pinning is load-bearing for OSS (a Databricks-specific model id would
+    404 on a plain Anthropic key). The old ``databricks-gpt-5-4`` fallback
+    crash that a pin papered over is fixed at the root in
+    ``chat.py`` ``_spec_declares_harness_or_model``, which recognizes the
+    nested ``executor.config.harness`` and so never injects the ad-hoc
+    default. Re-pinning a ``model`` here would re-couple polly to one
+    provider — fail here so that regression is caught.
 
     Reads ``executor.config.harness`` (not a flat ``harness:``) because this
     is a bundle: a regression that drops the harness into a flat key would
@@ -59,9 +59,9 @@ def test_orchestrator_executor(polly_spec: AgentSpec) -> None:
     assert polly_spec.name == "polly"
     ex = polly_spec.executor
     assert ex.config.get("harness") == "claude-sdk"
-    # Faster planning pin — Claude Code alias so Anthropic / gateway /
-    # Databricks auth still resolve. A Databricks-only id here would re-couple OSS.
-    assert ex.model == "sonnet"
+    # No model pin — the configured provider's default Claude model is used.
+    # Re-introducing a pin (Databricks or otherwise) fails here.
+    assert ex.model is None
     # Profile is intentionally NOT pinned either.
     assert ex.profile is None
     assert ex.context_window == 1000000
@@ -99,7 +99,7 @@ def test_coding_subagents(polly_spec: AgentSpec) -> None:
     # Headless bypass knobs so workers don't stall on ApprovalCards.
     by_name = {a.name: a for a in polly_spec.sub_agents}
     assert by_name["claude_code"].executor.config.get("permission_mode") == "auto"
-    assert by_name["claude_code"].executor.model == "sonnet"
+    assert by_name["claude_code"].executor.model is None
     assert by_name["codex"].executor.config.get("yolo") in (True, "True", "true")
     assert by_name["cursor"].executor.config.get("yolo") in (True, "True", "true")
     assert by_name["cursor"].executor.model == "grok-4.5"
