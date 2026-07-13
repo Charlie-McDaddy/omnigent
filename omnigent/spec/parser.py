@@ -622,6 +622,26 @@ def _parse_executor(
     )
     raw_model = raw.get("model")
     model: str | None = str(raw_model) if raw_model is not None else None
+    raw_harness_models = raw.get("harness_models")
+    harness_models: dict[str, str] = {}
+    if raw_harness_models is not None:
+        if not isinstance(raw_harness_models, dict):
+            raise OmnigentError(
+                "executor.harness_models must map harness ids to model ids",
+                code=ErrorCode.INVALID_INPUT,
+            )
+        for raw_harness, raw_default_model in raw_harness_models.items():
+            if not isinstance(raw_harness, str) or not raw_harness.strip():
+                raise OmnigentError(
+                    "executor.harness_models keys must be non-empty strings",
+                    code=ErrorCode.INVALID_INPUT,
+                )
+            if not isinstance(raw_default_model, str) or not raw_default_model.strip():
+                raise OmnigentError(
+                    f"executor.harness_models[{raw_harness!r}] must be a non-empty string",
+                    code=ErrorCode.INVALID_INPUT,
+                )
+            harness_models[raw_harness.strip()] = raw_default_model.strip()
     # Parse ``executor.connection:`` — same shape as ``llm.connection:``
     # (a flat dict of string key-value pairs with optional ${VAR}
     # expansion). Lifted from the ``executor:`` block so connection
@@ -642,6 +662,7 @@ def _parse_executor(
         profile=profile,
         config=config,
         model=model,
+        harness_models=harness_models,
         connection=connection,
         context_window=context_window,
         auth=auth,

@@ -112,6 +112,54 @@ async def test_create_without_harness_override_reports_spec_default(
     assert resp.json().get("harness") == "claude-sdk"
 
 
+async def test_create_harness_override_applies_agent_model_default(
+    client: httpx.AsyncClient,
+) -> None:
+    """A harness override inherits its agent-scoped model default."""
+    agent = await create_test_agent(
+        client,
+        executor={
+            "type": "omnigent",
+            "harness_models": {"cursor": "grok-4.5"},
+            "config": {"harness": "claude-sdk"},
+        },
+    )
+    resp = await client.post(
+        "/v1/sessions",
+        json={"agent_id": agent["id"], "initial_items": [], "harness_override": "cursor"},
+    )
+
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["harness"] == "cursor"
+    assert resp.json()["model_override"] == "grok-4.5"
+
+
+async def test_explicit_model_wins_over_harness_model_default(
+    client: httpx.AsyncClient,
+) -> None:
+    """An explicit model takes precedence over the bundle default."""
+    agent = await create_test_agent(
+        client,
+        executor={
+            "type": "omnigent",
+            "harness_models": {"cursor": "grok-4.5"},
+            "config": {"harness": "claude-sdk"},
+        },
+    )
+    resp = await client.post(
+        "/v1/sessions",
+        json={
+            "agent_id": agent["id"],
+            "initial_items": [],
+            "harness_override": "cursor",
+            "model_override": "gpt-5",
+        },
+    )
+
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["model_override"] == "gpt-5"
+
+
 async def test_create_harness_override_alias_canonicalizes(
     client: httpx.AsyncClient,
 ) -> None:

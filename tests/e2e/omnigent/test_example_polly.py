@@ -62,6 +62,7 @@ def test_orchestrator_executor(polly_spec: AgentSpec) -> None:
     # No model pin — the configured provider's default Claude model is used.
     # Re-introducing a pin (Databricks or otherwise) fails here.
     assert ex.model is None
+    assert ex.harness_models == {"cursor": "grok-4.5"}
     # Profile is intentionally NOT pinned either.
     assert ex.profile is None
     assert ex.context_window == 1000000

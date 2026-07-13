@@ -28,6 +28,8 @@ spawn: true
 executor:
   type: omnigent
   context_window: 1000000
+  harness_models:
+    cursor: grok-4.5
   config:
     harness: claude-sdk
 

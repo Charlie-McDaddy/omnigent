@@ -3229,16 +3229,23 @@ def _apply_overrides_to_raw(raw: _YamlMapping, overrides: ChatOverrides) -> None
         executor_block["model"] = overrides.model
     if overrides.harness is not None:
         _apply_harness_override_to_executor(raw, executor_block, overrides.harness)
-        # A harness-only override drops any prior model pin so the new
-        # harness resolves its provider default — e.g. ``omnigent run
-        # examples/polly --harness pi`` must not keep Polly's Claude-only
-        # a Claude-only ``executor.model``. An explicit ``--model``
-        # (applied above) wins and is left alone.
+        # Drop the original harness's pin, then use an agent-scoped default
+        # when one is declared for the replacement harness.
         if overrides.model is None:
             executor_block.pop("model", None)
             llm_block = raw.get("llm")
             if isinstance(llm_block, dict):
                 llm_block.pop("model", None)
+            harness_models = executor_block.get("harness_models")
+            if isinstance(harness_models, dict):
+                canonical = canonicalize_harness(overrides.harness) or overrides.harness
+                for configured_harness, configured_model in harness_models.items():
+                    configured = canonicalize_harness(str(configured_harness)) or str(
+                        configured_harness
+                    )
+                    if configured == canonical and isinstance(configured_model, str):
+                        executor_block["model"] = configured_model
+                        break
     # When neither harness nor model is declared — after overrides —
     # inject the ad-hoc default. Gated on harness absence so a YAML
     # like ``claude_code_agent.yaml`` (declares harness, no model)

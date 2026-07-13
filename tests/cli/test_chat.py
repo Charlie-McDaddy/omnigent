@@ -1723,6 +1723,28 @@ def test_apply_overrides_harness_only_clears_pinned_model() -> None:
     assert executor.get("model") is None
 
 
+def test_apply_overrides_harness_only_uses_agent_model_default() -> None:
+    """A bundle can select a model when its brain harness is overridden."""
+    raw: dict[str, object] = {
+        "spec_version": 1,
+        "name": "polly",
+        "prompt": "orchestrate",
+        "executor": {
+            "type": "omnigent",
+            "model": "sonnet",
+            "harness_models": {"cursor": "grok-4.5"},
+            "config": {"harness": "claude-sdk"},
+        },
+    }
+
+    _apply_overrides_to_raw(raw, ChatOverrides(harness="cursor"))
+
+    executor = raw["executor"]
+    assert isinstance(executor, dict)
+    assert executor["config"]["harness"] == "cursor"
+    assert executor["model"] == "grok-4.5"
+
+
 def test_apply_overrides_rejects_harness_for_non_omnigent_executor_type() -> None:
     """
     A spec_version bundle with a non-omnigent ``executor.type`` fails

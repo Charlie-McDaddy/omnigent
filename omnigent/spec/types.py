@@ -543,6 +543,8 @@ class ExecutorSpec:  # type: ignore[explicit-any]  # config: dict[str, Any] fiel
         key. Used by harness spawn-env builders, context-window
         auto-detection, telemetry, and tool-provider inference.
         ``None`` only when no model is declared anywhere in the spec.
+    :param harness_models: Model defaults for create-time brain-harness
+        overrides, keyed by harness id. Explicit model overrides win.
     :param connection: Per-provider connection overrides (credentials,
         endpoint URLs), e.g.
         ``{"api_key": "sk-...", "base_url": "https://..."}``.
@@ -585,6 +587,8 @@ class ExecutorSpec:  # type: ignore[explicit-any]  # config: dict[str, Any] fiel
     # Primary model identifier for all executor types. Populated by
     # the parser from executor.model or (backward compat) llm.model.
     model: str | None = None
+    # Agent-scoped defaults for create-time brain-harness overrides.
+    harness_models: dict[str, str] = field(default_factory=dict)
     # Per-provider connection overrides (api_key, base_url, etc.).
     # Populated from executor.connection or (backward compat) llm.connection.
     # None means rely on environment variable / profile defaults.

@@ -95,7 +95,7 @@ from omnigent.harness_plugins import (
 from omnigent.host.frames import (
     HARNESS_NOT_CONFIGURED_ERROR_CODE as _HARNESS_NOT_CONFIGURED_ERROR_CODE,
 )
-from omnigent.model_override import validate_model_override
+from omnigent.model_override import model_family_mismatch, validate_model_override
 from omnigent.native_coding_agents import (
     native_coding_agent_for_agent_name,
     native_coding_agent_for_harness,
@@ -2944,6 +2944,32 @@ def _validated_harness_override(value: str | None, agent: Agent) -> str | None:
             code=ErrorCode.INVALID_INPUT,
         )
     return canonical
+
+
+def _harness_override_model_default(agent: Agent, harness: str) -> str | None:
+    """Return an agent's model default for a create-time harness override."""
+    from omnigent.harness_aliases import canonicalize_harness
+    from omnigent.runtime import get_agent_cache
+
+    loaded = get_agent_cache().load(
+        agent.id, agent.bundle_location, expand_env=agent.session_id is None
+    )
+    canonical = canonicalize_harness(harness) or harness
+    for configured_harness, configured_model in loaded.spec.executor.harness_models.items():
+        configured = canonicalize_harness(configured_harness) or configured_harness
+        if configured != canonical:
+            continue
+        try:
+            model = validate_model_override(configured_model)
+        except ValueError as exc:
+            raise OmnigentError(
+                f"invalid executor.harness_models default for {canonical!r}: {exc}",
+                code=ErrorCode.INVALID_INPUT,
+            ) from exc
+        if mismatch := model_family_mismatch(canonical, model):
+            raise OmnigentError(mismatch, code=ErrorCode.INVALID_INPUT)
+        return model
+    return None
 
 
 def _utc_day(epoch_seconds: int) -> str:
@@ -12408,6 +12434,10 @@ async def _create_session_from_existing_agent(
     harness_override = await asyncio.to_thread(
         _validated_harness_override, body.harness_override, agent
     )
+    if model_override is None and harness_override is not None:
+        model_override = await asyncio.to_thread(
+            _harness_override_model_default, agent, harness_override
+        )
 
     # Inherit runner affinity from the parent session so the child
     # is assigned to the same runner (sub-agent co-location).

@@ -38,6 +38,25 @@ def test_parse_minimal(agent_dir: Path) -> None:
     assert spec.sub_agents == []
 
 
+def test_parse_executor_harness_models(agent_dir: Path) -> None:
+    """Harness-specific model defaults retain their mapping shape."""
+    config = {
+        "spec_version": 1,
+        "name": "multi-harness-agent",
+        "executor": {
+            "type": "omnigent",
+            "model": "claude-sonnet-4-6",
+            "harness_models": {"cursor": "grok-4.5"},
+            "config": {"harness": "claude-sdk"},
+        },
+    }
+    (agent_dir / "config.yaml").write_text(yaml.dump(config))
+
+    spec = parse(agent_dir)
+
+    assert spec.executor.harness_models == {"cursor": "grok-4.5"}
+
+
 def test_parse_missing_config_yaml(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError, match=r"config.yaml not found"):
         parse(tmp_path)

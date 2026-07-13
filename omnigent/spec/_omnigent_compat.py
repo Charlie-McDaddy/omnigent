@@ -201,6 +201,21 @@ def validate_omnigent_executor(
             f"must be one of {sorted(_OMNIGENT_ACCEPTED_HARNESSES)}, got {harness!r}"
             f"{install_hint}",
         )
+    from omnigent.model_override import model_family_mismatch, validate_model_override
+
+    for configured_harness, configured_model in spec.executor.harness_models.items():
+        canonical = canonicalize_harness(configured_harness) or configured_harness
+        field = f"executor.harness_models.{configured_harness}"
+        if canonical not in OMNIGENT_HARNESSES:
+            result.add(field, f"unknown harness {configured_harness!r}")
+            continue
+        try:
+            validate_model_override(configured_model)
+        except ValueError as exc:
+            result.add(field, str(exc))
+            continue
+        if mismatch := model_family_mismatch(canonical, configured_model):
+            result.add(field, mismatch)
 
 
 # ── YAML detection + loading ───────────────────────────────────

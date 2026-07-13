@@ -146,6 +146,12 @@ def _validate_executor_type(
         )
         return
 
+    if etype != OMNIGENT_EXECUTOR_TYPE and spec.executor.harness_models:
+        result.add(
+            "executor.harness_models",
+            f"only supported when executor.type is {OMNIGENT_EXECUTOR_TYPE!r}",
+        )
+
     if etype == "claude_sdk":
         _validate_claude_sdk_executor(spec, result)
     elif etype == "agents_sdk":
