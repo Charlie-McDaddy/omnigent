@@ -107,7 +107,7 @@ def _resolve_endpoint() -> str:
         if v.is_devrelease or v.is_prerelease:
             return _ENDPOINT_STAGING
     except Exception:
-        pass
+        _logger.debug("Version parse failed; defaulting to production endpoint", exc_info=True)
     return _ENDPOINT_PROD
 
 
@@ -406,7 +406,7 @@ def init_client() -> None:
             try:
                 _CLIENT = TelemetryClient()
             except Exception:
-                pass
+                _logger.debug("TelemetryClient init failed", exc_info=True)
 
 
 def emit(event: object) -> None:
