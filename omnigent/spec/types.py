@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Any, Literal
 from omnigent.inner.datamodel import OSEnvSpec, TerminalEnvSpec
 
 if TYPE_CHECKING:
+    from omnigent.dag_workflows.models import WorkflowRuntimeConfig
+
     # EvaluationContext is a runtime evaluation artifact (see
     # omnigent.policies.types); PhaseSelector.matches takes
     # one by attribute access only, so the annotation lives
@@ -1527,3 +1529,4 @@ class AgentSpec:  # type: ignore[explicit-any]  # params: dict[str, Any] field (
     timers: bool = False
     spawn: bool = False
     agent_session_sharing: SharePolicy = SharePolicy.NONE
+    workflows: WorkflowRuntimeConfig | None = None
