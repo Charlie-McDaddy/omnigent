@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import threading
 import uuid
 from pathlib import Path
@@ -12,7 +11,6 @@ from unittest.mock import patch
 import pytest
 
 from omnigent.telemetry.surface import classify_surface
-
 
 # ── classify_surface ────────────────────────────────────────────────────────
 
@@ -55,7 +53,9 @@ def test_classify_surface_empty_string() -> None:
 def test_classify_surface_regular_browser() -> None:
     """Regular browser UA → ``"web"``."""
     assert (
-        classify_surface("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36")
+        classify_surface(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0 Safari/537.36"
+        )
         == "web"
     )
 
@@ -158,7 +158,9 @@ def test_get_installation_id_creates_uuid(tmp_path: Path) -> None:
         patch.object(_mod, "_CACHE_INITIALIZED", False),
         patch.object(_mod, "_INSTALLATION_ID_CACHE", None),
         patch.object(_mod, "_CACHE_LOCK", threading.RLock()),
-        patch("omnigent.telemetry.installation_id._telemetry_file_path", return_value=telemetry_file),
+        patch(
+            "omnigent.telemetry.installation_id._telemetry_file_path", return_value=telemetry_file
+        ),
     ):
         result = _mod.get_installation_id()
 
@@ -184,7 +186,9 @@ def test_get_installation_id_reads_existing(tmp_path: Path) -> None:
         patch.object(_mod, "_CACHE_INITIALIZED", False),
         patch.object(_mod, "_INSTALLATION_ID_CACHE", None),
         patch.object(_mod, "_CACHE_LOCK", threading.RLock()),
-        patch("omnigent.telemetry.installation_id._telemetry_file_path", return_value=telemetry_file),
+        patch(
+            "omnigent.telemetry.installation_id._telemetry_file_path", return_value=telemetry_file
+        ),
     ):
         result = _mod.get_installation_id()
 
@@ -201,7 +205,9 @@ def test_get_installation_id_cache(tmp_path: Path) -> None:
         patch.object(_mod, "_CACHE_INITIALIZED", False),
         patch.object(_mod, "_INSTALLATION_ID_CACHE", None),
         patch.object(_mod, "_CACHE_LOCK", threading.RLock()),
-        patch("omnigent.telemetry.installation_id._telemetry_file_path", return_value=telemetry_file),
+        patch(
+            "omnigent.telemetry.installation_id._telemetry_file_path", return_value=telemetry_file
+        ),
     ):
         first = _mod.get_installation_id()
         # Reset only the path patch; cache flags remain as set by first call.
@@ -221,9 +227,13 @@ def test_get_installation_id_corrupted_file(tmp_path: Path) -> None:
         patch.object(_mod, "_CACHE_INITIALIZED", False),
         patch.object(_mod, "_INSTALLATION_ID_CACHE", None),
         patch.object(_mod, "_CACHE_LOCK", threading.RLock()),
-        patch("omnigent.telemetry.installation_id._telemetry_file_path", return_value=telemetry_file),
+        patch(
+            "omnigent.telemetry.installation_id._telemetry_file_path", return_value=telemetry_file
+        ),
         # Make _write_to_disk fail so we get None back rather than a fresh ID.
-        patch("omnigent.telemetry.installation_id._write_to_disk", side_effect=OSError("disk full")),
+        patch(
+            "omnigent.telemetry.installation_id._write_to_disk", side_effect=OSError("disk full")
+        ),
     ):
         result = _mod.get_installation_id()
 
