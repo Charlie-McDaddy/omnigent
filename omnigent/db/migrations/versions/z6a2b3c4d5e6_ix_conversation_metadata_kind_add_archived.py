@@ -1,7 +1,7 @@
 """Add archived to ix_conversation_metadata_kind index.
 
 Revision ID: z6a2b3c4d5e6
-Revises: z5a2b3c4d5e6
+Revises: bb2c3d4e5f6a
 Create Date: 2026-07-14 00:00:00.000000
 
 ``list_conversations`` pre-filters ``omnigent_conversation_metadata`` with
@@ -28,7 +28,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "z6a2b3c4d5e6"
-down_revision: str | None = "z5a2b3c4d5e6"
+down_revision: str | None = "bb2c3d4e5f6a"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
