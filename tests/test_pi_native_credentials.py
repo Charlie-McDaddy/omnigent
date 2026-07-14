@@ -697,9 +697,14 @@ def test_model_override_beats_databricks_default(monkeypatch: pytest.MonkeyPatch
 
     assert provider is not None
     assert provider.model == "databricks-claude-opus-4-7"
-    # The override flows all the way into the rendered models.json.
+    # The override flows all the way into the rendered models.json. The full
+    # Databricks Anthropic model list is registered so Pi's /model shows all
+    # available models; the override is appended when not in the static list.
     cfg = provider.to_models_config()
-    assert cfg["providers"]["omnigent"]["models"] == [{"id": "databricks-claude-opus-4-7"}]
+    model_ids = [m["id"] for m in cfg["providers"]["omnigent"]["models"]]
+    assert "databricks-claude-opus-4-7" in model_ids
+    assert "databricks-claude-sonnet-4-6" in model_ids
+    assert "databricks-claude-opus-4-8" in model_ids
 
 
 def test_model_override_beats_inline_family_default() -> None:

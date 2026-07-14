@@ -22,7 +22,7 @@ import json
 import logging
 import os
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
@@ -62,6 +62,34 @@ _PI_PROVIDER_ID = "omnigent"
 # default the in-process Databricks executor pins. Used when the session
 # carries no explicit model override.
 _DATABRICKS_PI_DEFAULT_MODEL = "databricks-claude-sonnet-4-6"
+
+# All Claude models available on the Databricks AI Gateway Anthropic surface.
+# Keep in sync with _DATABRICKS_ANTHROPIC_MODELS in omnigent/inner/pi_executor.py.
+# Declaring ``input`` is required so Pi's transformMessages doesn't strip
+# image blocks from vision-capable models.
+_DATABRICKS_ANTHROPIC_NATIVE_MODELS: list[dict[str, Any]] = [
+    {
+        "id": "databricks-claude-opus-4-8",
+        "name": "Claude Opus 4.8",
+        "contextWindow": 1000000,
+        "maxTokens": 128000,
+        "input": ["text", "image"],
+    },
+    {
+        "id": "databricks-claude-sonnet-4-6",
+        "name": "Claude Sonnet 4.6",
+        "contextWindow": 1000000,
+        "maxTokens": 128000,
+        "input": ["text", "image"],
+    },
+    {
+        "id": "databricks-claude-sonnet-4-5",
+        "name": "Claude Sonnet 4.5",
+        "contextWindow": 200000,
+        "maxTokens": 16384,
+        "input": ["text", "image"],
+    },
+]
 
 # Databricks AI Gateway Anthropic Messages surface. Pi speaks this protocol
 # natively (``api: anthropic-messages``); the gateway authenticates with a
@@ -145,14 +173,26 @@ class PiProviderConfig:
     model: str
     api_key: str
     auth_header: bool
+    # Full model list for providers that expose multiple models (e.g. the
+    # Databricks Anthropic gateway). Excluded from __hash__ so the frozen
+    # dataclass stays hashable even though list[dict] is not hashable.
+    extra_models: list[dict[str, Any]] = field(default_factory=list, hash=False)
 
     def to_models_config(self) -> dict[str, Any]:
         """Render this provider as a Pi ``models.json`` mapping."""
+        if self.extra_models:
+            # Include all known models, ensuring the selected model is present.
+            # The selected model may be a newer id not yet in the static list.
+            models: list[dict[str, Any]] = list(self.extra_models)
+            if not any(m.get("id") == self.model for m in models):
+                models.append({"id": self.model, "input": ["text", "image"]})
+        else:
+            models = [{"id": self.model}]
         provider: dict[str, Any] = {
             "baseUrl": self.base_url,
             "api": self.api,
             "apiKey": self.api_key,
-            "models": [{"id": self.model}],
+            "models": models,
         }
         if self.auth_header:
             provider["authHeader"] = True
@@ -187,6 +227,7 @@ def _databricks_pi_provider(entry: ProviderEntry, *, model: str | None) -> PiPro
         # force-refreshes), matching codex-native's refresh semantics.
         api_key=f"!{auth_command}",
         auth_header=True,
+        extra_models=list(_DATABRICKS_ANTHROPIC_NATIVE_MODELS),
     )
 
 
@@ -328,6 +369,7 @@ def _cli_config_pi_provider(entry: ProviderEntry, *, model: str | None) -> PiPro
         # request — matching codex-native's refresh semantics.
         api_key=f"!{transport.auth_command}",
         auth_header=True,
+        extra_models=list(_DATABRICKS_ANTHROPIC_NATIVE_MODELS),
     )
 
 
