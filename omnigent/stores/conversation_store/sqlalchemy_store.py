@@ -936,13 +936,13 @@ class SqlAlchemyConversationStore(ConversationStore):
         """
         Fetch a conversation by its unique ID.
 
-        Populates ``Conversation.labels`` via a second query
-        against ``conversation_labels`` — separate from the
-        conversation row fetch because the label JOIN would
-        otherwise multiply the row count by the label count
-        and require post-processing. The two queries run in
-        the same session so they see a consistent snapshot
-        under serializable isolation.
+        Issues two queries inside one session:
+
+        1. A single LEFT OUTER JOIN of ``conversations`` +
+           ``agent_configuration`` (same PK, same DB) so both rows
+           arrive in one round-trip instead of two serial
+           ``session.get`` calls.
+        2. A label fetch on ``conversation_labels``.
 
         :param conversation_id: Unique conversation identifier,
             e.g. ``"conv_abc123"``.
@@ -950,12 +950,21 @@ class SqlAlchemyConversationStore(ConversationStore):
             ``None``.
         """
         with self._conv_session() as session:
-            row = session.get(SqlConversation, (current_workspace_id(), conversation_id))
-            if row is None:
+            result = session.execute(
+                select(SqlConversation, SqlAgentConfiguration)
+                .outerjoin(
+                    SqlAgentConfiguration,
+                    (SqlAgentConfiguration.workspace_id == SqlConversation.workspace_id)
+                    & (SqlAgentConfiguration.conversation_id == SqlConversation.id),
+                )
+                .where(
+                    SqlConversation.workspace_id == current_workspace_id(),
+                    SqlConversation.id == conversation_id,
+                )
+            ).first()
+            if result is None:
                 return None
-            agent_config = session.get(
-                SqlAgentConfiguration, (current_workspace_id(), conversation_id)
-            )
+            row, agent_config = result
             meta = self._get_meta(session, conversation_id)
             return _to_conversation(
                 row, meta, _fetch_labels(session, conversation_id), agent_config
