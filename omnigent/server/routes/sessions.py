@@ -7111,6 +7111,15 @@ def _report_runner_transport_failure(runner_id: str) -> None:
         router.record_runner_failure(runner_id)
 
 
+def _report_runner_transport_success(runner_id: str) -> None:
+    """Notify the runner router of a successful call to reset the consecutive-failure counter."""
+    from omnigent.runtime import get_runner_router
+
+    router = get_runner_router()
+    if router is not None:
+        router.record_runner_success(runner_id)
+
+
 async def _get_runner_client_for_resource_access(
     session_id: str,
 ) -> RoutedRunner | None:
@@ -7141,6 +7150,7 @@ async def _proxy_get_session_resources_to_runner(
     runner_client: httpx.AsyncClient,
     session_id: str,
     resource_type: str | None = None,
+    runner_id: str = "",
 ) -> SessionResourcePaginatedList:
     """Proxy ``GET /resources`` to the runner with strict validation.
 
@@ -7149,6 +7159,8 @@ async def _proxy_get_session_resources_to_runner(
         e.g. ``"conv_abc123"``.
     :param resource_type: Optional ``?type=`` filter forwarded to the
         runner, e.g. ``"environment"``. ``None`` returns all types.
+    :param runner_id: Runner id used to report transport outcomes to the
+        circuit breaker.  Pass ``""`` to skip reporting (legacy path).
     :returns: The runner's validated resource page.
     :raises HTTPException: 502 on runner failure or malformed response.
     """
@@ -7186,6 +7198,7 @@ async def _proxy_get_session_resources_to_runner(
                 detail="runner session-resources endpoint returned malformed response",
             ) from exc
 
+        _report_runner_transport_success(runner_id)
         return SessionResourcePaginatedList(
             data=page.data,
             first_id=page.first_id,
@@ -7200,6 +7213,7 @@ async def _proxy_get_session_resources_to_runner(
             session_id,
             exc,
         )
+        _report_runner_transport_failure(runner_id)
         raise HTTPException(
             status_code=502,
             detail="runner session-resources endpoint unavailable",
@@ -7248,7 +7262,7 @@ async def _reset_runner_resources_after_switch(session_id: str) -> None:
             return
         reset_resp = await routed.client.post(
             f"/v1/sessions/{urllib.parse.quote(session_id, safe='')}/reset-state",
-            timeout=3.0,
+            timeout=10.0,
         )
         # httpx only raises on transport errors — a 4xx/5xx reset response
         # still returns. A non-2xx means the runner did NOT close the old
@@ -17340,7 +17354,7 @@ def create_sessions_router(
         routed = await _get_runner_client_for_resource_access(session_id)
         if routed is not None:
             page = await _proxy_get_session_resources_to_runner(
-                routed.client, session_id, resource_type=type
+                routed.client, session_id, resource_type=type, runner_id=routed.runner_id
             )
         else:
             from omnigent.entities.session_resources import (
@@ -17464,6 +17478,7 @@ def create_sessions_router(
                 status_code=502,
                 detail="runner resource endpoint unavailable",
             ) from exc
+        _report_runner_transport_success(routed.runner_id)
         if resp.status_code == 404:
             raise OmnigentError(
                 resp.json().get("error", {}).get("message", "Resource not found"),
@@ -17512,6 +17527,7 @@ def create_sessions_router(
                 status_code=502,
                 detail="runner resource endpoint unavailable",
             ) from exc
+        _report_runner_transport_success(routed.runner_id)
         return resp.status_code, resp.json()
 
     async def _proxy_delete_to_runner(
@@ -17541,6 +17557,7 @@ def create_sessions_router(
                 status_code=502,
                 detail="runner resource endpoint unavailable",
             ) from exc
+        _report_runner_transport_success(routed.runner_id)
         return resp.status_code, resp.json()
 
     async def _proxy_put_to_runner(
@@ -17576,6 +17593,7 @@ def create_sessions_router(
                 status_code=502,
                 detail="runner resource endpoint unavailable",
             ) from exc
+        _report_runner_transport_success(routed.runner_id)
         return resp.status_code, resp.json()
 
     async def _proxy_patch_to_runner(
@@ -17611,6 +17629,7 @@ def create_sessions_router(
                 status_code=502,
                 detail="runner resource endpoint unavailable",
             ) from exc
+        _report_runner_transport_success(routed.runner_id)
         return resp.status_code, resp.json()
 
     # Typed collection routes registered BEFORE /{resource_id} so

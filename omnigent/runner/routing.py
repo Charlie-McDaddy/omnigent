@@ -40,6 +40,9 @@ _CB_OPEN_SECONDS = 60.0
 class _CircuitState:
     failures: int = 0
     opened_at: float | None = None
+    # True while a single half-open probe is in flight; other callers see
+    # the circuit as still open until the probe resolves.
+    probing: bool = False
 
 
 _EXECUTOR_TYPE_TO_HARNESS: dict[str, str] = {"claude_sdk": "claude-sdk"}
@@ -203,10 +206,12 @@ class RunnerRouter:
         """
         Record a transport failure for *runner_id*.
 
-        After :data:`_CB_FAILURE_THRESHOLD` consecutive failures the
+        After :data:`_CB_FAILURE_THRESHOLD` *consecutive* failures the
         circuit opens and subsequent calls to routing methods raise
         :exc:`~omnigent.errors.OmnigentError` immediately instead of
-        attempting a connection.
+        attempting a connection.  :meth:`record_runner_success` resets
+        the counter so that intermittent blips on a healthy runner do
+        not accumulate toward the threshold across the runner's lifetime.
 
         :param runner_id: Runner UUID, e.g.
             ``"runner_0123456789abcdef"``.
@@ -216,6 +221,7 @@ class RunnerRouter:
         with self._lock:
             state = self._circuit_states.setdefault(runner_id, _CircuitState())
             state.failures += 1
+            state.probing = False  # failed probe re-opens the circuit
             if state.failures >= _CB_FAILURE_THRESHOLD and state.opened_at is None:
                 state.opened_at = time.monotonic()
                 _logger.warning(
@@ -223,10 +229,17 @@ class RunnerRouter:
                     runner_id,
                     state.failures,
                 )
+            elif state.opened_at is not None:
+                # Half-open probe failed — reset the open timer.
+                state.opened_at = time.monotonic()
 
     def record_runner_success(self, runner_id: str) -> None:
         """
         Reset the failure counter for *runner_id* after a successful call.
+
+        Closes the circuit (or cancels an in-flight half-open probe) so
+        that intermittent transport blips on a healthy runner do not
+        accumulate toward the threshold across the runner's lifetime.
 
         :param runner_id: Runner UUID, e.g.
             ``"runner_0123456789abcdef"``.
@@ -276,11 +289,15 @@ class RunnerRouter:
         """
         Raise if the circuit for *runner_id* is open.
 
-        In the half-open window (after :data:`_CB_OPEN_SECONDS` have
-        elapsed) the state is cleared so the next call acts as a probe.
+        After :data:`_CB_OPEN_SECONDS` the circuit enters half-open state
+        and allows exactly one probe.  Concurrent callers during the
+        half-open window see the circuit as still open until the probe
+        resolves via :meth:`record_runner_success` or
+        :meth:`record_runner_failure`.
 
         :param runner_id: Runner UUID.
-        :raises OmnigentError: When the circuit is open.
+        :raises OmnigentError: When the circuit is open or a half-open
+            probe is already in flight.
         """
         with self._lock:
             state = self._circuit_states.get(runner_id)
@@ -293,9 +310,14 @@ class RunnerRouter:
                     f"({state.failures} consecutive failures); try again shortly",
                     code=ErrorCode.RUNNER_UNAVAILABLE,
                 )
-            # Half-open: clear state and allow one probe through.
+            # Half-open window: allow exactly one probe through.
+            if state.probing:
+                raise OmnigentError(
+                    f"runner {runner_id!r} circuit is half-open; probe already in flight",
+                    code=ErrorCode.RUNNER_UNAVAILABLE,
+                )
             _logger.info("circuit breaker half-open for runner %r; allowing probe", runner_id)
-            self._circuit_states.pop(runner_id)
+            state.probing = True
 
     def _routed_pinned_runner(self, runner_id: str, *, harness: str) -> RoutedRunner:
         """
