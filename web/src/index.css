@@ -1808,7 +1808,7 @@
   --muted: #d8dee9;
   --muted-foreground: #4c566a;
   --code-bg: #d8dee9;
-  --accent: #d8dee9;
+  --accent: #e5e9f0;
   --accent-foreground: #5e81ac;
   --border: #d8dee9;
   --border-strong: #81a1c1;
@@ -1840,7 +1840,7 @@
   --secondary-foreground: #eceff4;
   --muted: #434c5e;
   --muted-foreground: #d8dee9;
-  --code-bg: #2e3440;
+  --code-bg: #3b4252;
   --accent: #434c5e;
   --accent-foreground: #88c0d0;
   --border: #4c566a;
