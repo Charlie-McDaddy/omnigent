@@ -34,6 +34,9 @@ _logger = logging.getLogger(__name__)
 _CB_FAILURE_THRESHOLD = 3
 # Seconds to keep the circuit open before allowing one half-open probe.
 _CB_OPEN_SECONDS = 60.0
+# A half-open probe that never reports an outcome is released after this
+# many seconds so the circuit can self-heal even when callers don't report.
+_CB_PROBE_TIMEOUT_S = 30.0
 
 
 @dataclass
@@ -43,6 +46,9 @@ class _CircuitState:
     # True while a single half-open probe is in flight; other callers see
     # the circuit as still open until the probe resolves.
     probing: bool = False
+    # Monotonic timestamp when the current probe started; used to release
+    # stale probes from non-reporting call sites after _CB_PROBE_TIMEOUT_S.
+    probe_started_at: float | None = None
 
 
 _EXECUTOR_TYPE_TO_HARNESS: dict[str, str] = {"claude_sdk": "claude-sdk"}
@@ -222,6 +228,7 @@ class RunnerRouter:
             state = self._circuit_states.setdefault(runner_id, _CircuitState())
             state.failures += 1
             state.probing = False  # failed probe re-opens the circuit
+            state.probe_started_at = None
             if state.failures >= _CB_FAILURE_THRESHOLD and state.opened_at is None:
                 state.opened_at = time.monotonic()
                 _logger.warning(
@@ -312,12 +319,25 @@ class RunnerRouter:
                 )
             # Half-open window: allow exactly one probe through.
             if state.probing:
-                raise OmnigentError(
-                    f"runner {runner_id!r} circuit is half-open; probe already in flight",
-                    code=ErrorCode.RUNNER_UNAVAILABLE,
+                # Self-heal: if the probe caller never reported an outcome
+                # (non-reporting path, or died), release the slot after
+                # _CB_PROBE_TIMEOUT_S so the circuit can recover.
+                stale = (
+                    state.probe_started_at is None
+                    or time.monotonic() - state.probe_started_at >= _CB_PROBE_TIMEOUT_S
+                )
+                if not stale:
+                    raise OmnigentError(
+                        f"runner {runner_id!r} circuit is half-open; probe already in flight",
+                        code=ErrorCode.RUNNER_UNAVAILABLE,
+                    )
+                _logger.info(
+                    "circuit breaker: releasing stale probe for runner %r; allowing new probe",
+                    runner_id,
                 )
             _logger.info("circuit breaker half-open for runner %r; allowing probe", runner_id)
             state.probing = True
+            state.probe_started_at = time.monotonic()
 
     def _routed_pinned_runner(self, runner_id: str, *, harness: str) -> RoutedRunner:
         """

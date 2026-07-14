@@ -7102,8 +7102,23 @@ async def _ensure_runner_session_initialized(
         )
 
 
-def _report_runner_transport_failure(runner_id: str) -> None:
-    """Notify the runner router of a transport failure for circuit-breaker tracking."""
+def _is_runner_offline_error(exc: BaseException) -> bool:
+    """Return True for errors that indicate the runner is unreachable.
+
+    ReadTimeout / PoolTimeout mean the runner is reachable but slow and
+    should not count toward the circuit-breaker failure threshold.
+    """
+    return not isinstance(exc, (httpx.ReadTimeout, httpx.PoolTimeout))
+
+
+def _report_runner_transport_failure(runner_id: str, exc: BaseException | None = None) -> None:
+    """Notify the runner router of a transport failure for circuit-breaker tracking.
+
+    Pass *exc* so that read/pool timeouts (slow-but-alive runner) are
+    excluded from the threshold; only connect-type failures count.
+    """
+    if exc is not None and not _is_runner_offline_error(exc):
+        return
     from omnigent.runtime import get_runner_router
 
     router = get_runner_router()
@@ -7171,53 +7186,50 @@ async def _proxy_get_session_resources_to_runner(
             params={"type": resource_type} if resource_type else None,
             timeout=3.0,
         )
-        if resp.status_code != 200:
-            _logger.warning(
-                "session resources: runner returned %d for session=%s",
-                resp.status_code,
-                session_id,
-            )
-            raise HTTPException(
-                status_code=502,
-                detail="runner session-resources endpoint failed",
-            )
-
-        try:
-            body = resp.json()
-            if not isinstance(body, dict):
-                raise TypeError("response body must be an object")
-            page = SessionResourceListPage.model_validate(body)
-        except (TypeError, ValueError, ValidationError) as exc:
-            _logger.warning(
-                "session resources: malformed runner response for session=%s: %s",
-                session_id,
-                exc,
-            )
-            raise HTTPException(
-                status_code=502,
-                detail="runner session-resources endpoint returned malformed response",
-            ) from exc
-
-        _report_runner_transport_success(runner_id)
-        return SessionResourcePaginatedList(
-            data=page.data,
-            first_id=page.first_id,
-            last_id=page.last_id,
-            has_more=page.has_more,
-        )
-    except HTTPException:
-        raise
     except (httpx.HTTPError, ConnectionError) as exc:
         _logger.warning(
             "session resources: runner call failed for session=%s (%s)",
             session_id,
             exc,
         )
-        _report_runner_transport_failure(runner_id)
+        _report_runner_transport_failure(runner_id, exc)
         raise HTTPException(
             status_code=502,
             detail="runner session-resources endpoint unavailable",
         ) from exc
+    # Any received response confirms the transport is healthy.
+    _report_runner_transport_success(runner_id)
+    if resp.status_code != 200:
+        _logger.warning(
+            "session resources: runner returned %d for session=%s",
+            resp.status_code,
+            session_id,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="runner session-resources endpoint failed",
+        )
+    try:
+        body = resp.json()
+        if not isinstance(body, dict):
+            raise TypeError("response body must be an object")
+        page = SessionResourceListPage.model_validate(body)
+    except (TypeError, ValueError, ValidationError) as exc:
+        _logger.warning(
+            "session resources: malformed runner response for session=%s: %s",
+            session_id,
+            exc,
+        )
+        raise HTTPException(
+            status_code=502,
+            detail="runner session-resources endpoint returned malformed response",
+        ) from exc
+    return SessionResourcePaginatedList(
+        data=page.data,
+        first_id=page.first_id,
+        last_id=page.last_id,
+        has_more=page.has_more,
+    )
 
 
 async def _reset_runner_resources_after_switch(session_id: str) -> None:
@@ -17473,7 +17485,7 @@ def create_sessions_router(
         try:
             resp = await routed.client.get(path, params=params, timeout=3.0)
         except (httpx.HTTPError, ConnectionError) as exc:
-            _report_runner_transport_failure(routed.runner_id)
+            _report_runner_transport_failure(routed.runner_id, exc)
             raise HTTPException(
                 status_code=502,
                 detail="runner resource endpoint unavailable",
@@ -17522,7 +17534,7 @@ def create_sessions_router(
                 timeout=3.0,
             )
         except (httpx.HTTPError, ConnectionError) as exc:
-            _report_runner_transport_failure(routed.runner_id)
+            _report_runner_transport_failure(routed.runner_id, exc)
             raise HTTPException(
                 status_code=502,
                 detail="runner resource endpoint unavailable",
@@ -17552,7 +17564,7 @@ def create_sessions_router(
         try:
             resp = await routed.client.delete(path, timeout=3.0)
         except (httpx.HTTPError, ConnectionError) as exc:
-            _report_runner_transport_failure(routed.runner_id)
+            _report_runner_transport_failure(routed.runner_id, exc)
             raise HTTPException(
                 status_code=502,
                 detail="runner resource endpoint unavailable",
@@ -17588,7 +17600,7 @@ def create_sessions_router(
                 timeout=3.0,
             )
         except (httpx.HTTPError, ConnectionError) as exc:
-            _report_runner_transport_failure(routed.runner_id)
+            _report_runner_transport_failure(routed.runner_id, exc)
             raise HTTPException(
                 status_code=502,
                 detail="runner resource endpoint unavailable",
@@ -17624,7 +17636,7 @@ def create_sessions_router(
                 timeout=3.0,
             )
         except (httpx.HTTPError, ConnectionError) as exc:
-            _report_runner_transport_failure(routed.runner_id)
+            _report_runner_transport_failure(routed.runner_id, exc)
             raise HTTPException(
                 status_code=502,
                 detail="runner resource endpoint unavailable",
