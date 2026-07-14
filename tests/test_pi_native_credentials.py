@@ -697,14 +697,12 @@ def test_model_override_beats_databricks_default(monkeypatch: pytest.MonkeyPatch
 
     assert provider is not None
     assert provider.model == "databricks-claude-opus-4-7"
-    # The override flows all the way into the rendered models.json. The full
-    # Databricks Anthropic model list is registered so Pi's /model shows all
-    # available models; the override is appended when not in the static list.
+    # The override flows into the rendered models.json. When the live model
+    # fetch fails (no real credentials in tests), only the selected model is
+    # shown — no stale hardcoded list.
     cfg = provider.to_models_config()
     model_ids = [m["id"] for m in cfg["providers"]["omnigent"]["models"]]
     assert "databricks-claude-opus-4-7" in model_ids
-    assert "databricks-claude-sonnet-4-6" in model_ids
-    assert "databricks-claude-opus-4-8" in model_ids
 
 
 def test_model_override_beats_inline_family_default() -> None:
@@ -830,7 +828,7 @@ def test_databricks_profile_registers_gpt_provider(monkeypatch: pytest.MonkeyPat
     """A Databricks profile provider includes an OpenAI Completions provider for GPT models.
 
     The ``omnigent-openai`` provider targets ``/serving-endpoints`` so Pi's
-    /model command exposes GPT models alongside the Claude models.
+    /model command exposes GPT models returned by the live serving-endpoints API.
     """
     from omnigent.inner import databricks_executor
 
@@ -839,6 +837,17 @@ def test_databricks_profile_registers_gpt_provider(monkeypatch: pytest.MonkeyPat
         "_read_databrickscfg_host",
         lambda profile: "https://wkspc.example.com/",
     )
+    # Mock credential resolution and live fetch — no real Databricks profile needed.
+    from omnigent.runtime.credentials import databricks as db_creds_mod
+
+    monkeypatch.setattr(
+        db_creds_mod,
+        "resolve_databricks_workspace",
+        lambda profile: db_creds_mod.WorkspaceCreds(host="https://wkspc.example.com", token="tok"),
+    )
+    live_gpt = [{"id": "databricks-gpt-5-4", "input": ["text", "image"]}]
+    live_claude = [{"id": "databricks-claude-sonnet-4-6", "input": ["text", "image"]}]
+    monkeypatch.setattr(creds, "_fetch_pi_model_lists", lambda *_: (live_claude, live_gpt, []))
 
     provider = creds.resolve_pi_native_provider(config_loader=_databricks_config)
     assert provider is not None
@@ -848,9 +857,7 @@ def test_databricks_profile_registers_gpt_provider(monkeypatch: pytest.MonkeyPat
     assert openai_entry is not None, "omnigent-openai provider missing from models.json"
     assert openai_entry["baseUrl"] == "https://wkspc.example.com/serving-endpoints"
     assert openai_entry["api"] == "openai-completions"
-    gpt_ids = [m["id"] for m in openai_entry["models"]]
-    assert "databricks-gpt-5-4" in gpt_ids
-    assert "databricks-gpt-5-5" in gpt_ids
+    assert any(m["id"] == "databricks-gpt-5-4" for m in openai_entry["models"])
 
 
 def test_cli_config_databricks_registers_gpt_provider(
@@ -864,6 +871,11 @@ def test_cli_config_databricks_registers_gpt_provider(
     """
     _write_codex_config(tmp_path, _DATABRICKS_CODEX_CONFIG)
     monkeypatch.setenv("HOME", str(tmp_path))
+    # Stub the auth command (jq would fail in CI) and the live fetch.
+    live_gpt = [{"id": "databricks-gpt-5-4", "input": ["text", "image"]}]
+    live_claude = [{"id": "databricks-claude-sonnet-4-6", "input": ["text", "image"]}]
+    monkeypatch.setattr(creds, "_run_auth_command", lambda *_: "fake-token")
+    monkeypatch.setattr(creds, "_fetch_pi_model_lists", lambda *_: (live_claude, live_gpt, []))
 
     provider = creds.resolve_pi_native_provider(config_loader=_cli_config_databricks_config)
     assert provider is not None
@@ -877,9 +889,7 @@ def test_cli_config_databricks_registers_gpt_provider(
         == "https://1965859176160743.cloud.databricks.com/serving-endpoints"
     )
     assert openai_entry["api"] == "openai-completions"
-    gpt_ids = [m["id"] for m in openai_entry["models"]]
-    assert "databricks-gpt-5-4" in gpt_ids
-    assert "databricks-gpt-5-5" in gpt_ids
+    assert any(m["id"] == "databricks-gpt-5-4" for m in openai_entry["models"])
 
 
 def test_fetch_pi_model_lists_parses_serving_endpoints() -> None:
@@ -931,7 +941,11 @@ def test_fetch_pi_model_lists_parses_serving_endpoints() -> None:
 
 
 def test_fetch_pi_model_lists_falls_back_on_http_error() -> None:
-    """_fetch_pi_model_lists returns static defaults when the API call fails."""
+    """_fetch_pi_model_lists returns empty lists when the API call fails.
+
+    Empty lists → to_models_config() falls back to single-model display.
+    No stale hardcoded list is used.
+    """
     import unittest.mock
 
     import httpx
@@ -945,10 +959,8 @@ def test_fetch_pi_model_lists_falls_back_on_http_error() -> None:
         "httpx.Client",
         lambda **kw: _real_client(transport=_ErrorTransport()),
     ):
-        claude, gpt, _ = creds._fetch_pi_model_lists("https://wkspc.example.com", "bad-tok")
+        claude, gpt, other = creds._fetch_pi_model_lists("https://wkspc.example.com", "bad-tok")
 
-    claude_ids = [m["id"] for m in claude]
-    assert "databricks-claude-sonnet-4-6" in claude_ids
-    assert "databricks-claude-opus-4-8" in claude_ids
-    gpt_ids = [m["id"] for m in gpt]
-    assert "databricks-gpt-5-4" in gpt_ids
+    assert claude == []
+    assert gpt == []
+    assert other == []

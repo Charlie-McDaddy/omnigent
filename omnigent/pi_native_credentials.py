@@ -67,67 +67,6 @@ _DATABRICKS_PI_DEFAULT_MODEL = "databricks-claude-sonnet-4-6"
 # the primary Anthropic provider in Databricks gateway configs.
 _PI_OPENAI_PROVIDER_ID = "omnigent-openai"
 
-# All Claude models available on the Databricks AI Gateway Anthropic surface.
-# Keep in sync with _DATABRICKS_ANTHROPIC_MODELS in omnigent/inner/pi_executor.py.
-# Declaring ``input`` is required so Pi's transformMessages doesn't strip
-# image blocks from vision-capable models.
-_DATABRICKS_ANTHROPIC_NATIVE_MODELS: list[dict[str, Any]] = [
-    {
-        "id": "databricks-claude-opus-4-8",
-        "name": "Claude Opus 4.8",
-        "contextWindow": 1000000,
-        "maxTokens": 128000,
-        "input": ["text", "image"],
-    },
-    {
-        "id": "databricks-claude-sonnet-4-6",
-        "name": "Claude Sonnet 4.6",
-        "contextWindow": 1000000,
-        "maxTokens": 128000,
-        "input": ["text", "image"],
-    },
-    {
-        "id": "databricks-claude-sonnet-4-5",
-        "name": "Claude Sonnet 4.5",
-        "contextWindow": 200000,
-        "maxTokens": 16384,
-        "input": ["text", "image"],
-    },
-]
-
-# GPT models available on the Databricks workspace serving-endpoints.
-# Keep in sync with _DATABRICKS_RESPONSES_MODELS in omnigent/inner/pi_executor.py.
-_DATABRICKS_RESPONSES_NATIVE_MODELS: list[dict[str, Any]] = [
-    {
-        "id": "databricks-gpt-5-4-mini",
-        "name": "GPT-5.4 Mini",
-        "contextWindow": 1047576,
-        "maxTokens": 32768,
-        "input": ["text", "image"],
-    },
-    {
-        "id": "databricks-gpt-5-4",
-        "name": "GPT-5.4",
-        "contextWindow": 1047576,
-        "maxTokens": 32768,
-        "input": ["text", "image"],
-    },
-    {
-        "id": "databricks-gpt-5-5",
-        "name": "GPT-5.5",
-        "contextWindow": 400000,
-        "maxTokens": 128000,
-        "input": ["text", "image"],
-    },
-    {
-        "id": "databricks-gpt-5-5-pro",
-        "name": "GPT-5.5 Pro",
-        "contextWindow": 400000,
-        "maxTokens": 128000,
-        "input": ["text", "image"],
-    },
-]
-
 # Databricks AI Gateway Anthropic Messages surface. Pi speaks this protocol
 # natively (``api: anthropic-messages``); the gateway authenticates with a
 # workspace bearer token, so we set ``authHeader`` (Authorization: Bearer).
@@ -272,10 +211,10 @@ def _databricks_pi_provider(entry: ProviderEntry, *, model: str | None) -> PiPro
         claude_models, gpt_models, _ = _fetch_pi_model_lists(creds.host, creds.token)
     except Exception:  # noqa: BLE001 — credential/network failure must not break launch
         _LOGGER.info(
-            "pi-native: falling back to bundled model list (could not resolve credentials)"
+            "pi-native: falling back to single-model display (could not resolve credentials)"
         )
-        claude_models = list(_DATABRICKS_ANTHROPIC_NATIVE_MODELS)
-        gpt_models = list(_DATABRICKS_RESPONSES_NATIVE_MODELS)
+        claude_models = []
+        gpt_models = []
     return PiProviderConfig(
         provider_id=_PI_PROVIDER_ID,
         base_url=f"{host}{_DATABRICKS_ANTHROPIC_GATEWAY_PATH}",
@@ -406,16 +345,13 @@ def _fetch_pi_model_lists(
             )
             resp.raise_for_status()
             payload = resp.json()
-    except Exception:  # noqa: BLE001 — any HTTP/network failure falls back to statics
+    except Exception:  # noqa: BLE001 — HTTP/network failure → empty
         _LOGGER.warning(
-            "pi-native: could not fetch Databricks model list; using bundled defaults",
+            "pi-native: could not fetch Databricks model list; "
+            "Pi will show only the selected model",
             exc_info=True,
         )
-        return (
-            list(_DATABRICKS_ANTHROPIC_NATIVE_MODELS),
-            list(_DATABRICKS_RESPONSES_NATIVE_MODELS),
-            [],
-        )
+        return [], [], []
 
     endpoints = payload.get("endpoints") if isinstance(payload, dict) else None
     claude: list[dict[str, Any]] = []
@@ -456,12 +392,7 @@ def _fetch_pi_model_lists(
     if not claude and not gpt and not other:
         _LOGGER.info(
             "pi-native: Databricks serving-endpoints returned no LLM models; "
-            "using bundled defaults"
-        )
-        return (
-            list(_DATABRICKS_ANTHROPIC_NATIVE_MODELS),
-            list(_DATABRICKS_RESPONSES_NATIVE_MODELS),
-            [],
+            "Pi will show only the selected model"
         )
 
     return claude, gpt, other
@@ -602,8 +533,8 @@ def _cli_config_pi_provider(entry: ProviderEntry, *, model: str | None) -> PiPro
     workspace_url = _gateway_workspace_url(transport.base_url)
     # Fetch the live model list. Run the auth command once to get the current
     # token — Pi will refresh per request via the !command apiKey.
-    claude_models = list(_DATABRICKS_ANTHROPIC_NATIVE_MODELS)
-    gpt_models = list(_DATABRICKS_RESPONSES_NATIVE_MODELS)
+    claude_models: list[dict[str, Any]] = []
+    gpt_models: list[dict[str, Any]] = []
     if workspace_url and transport.auth_command:
         token = _run_auth_command(transport.auth_command)
         if token:
