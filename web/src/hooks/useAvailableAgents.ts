@@ -1,5 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { authenticatedFetch } from "@/lib/identity";
+import { fetchSessionAgent } from "./useAgents";
 import { agentRootName } from "@/lib/forkHarness";
 import { capitalizeAgentName } from "@/lib/agentLabels";
 import {
@@ -184,15 +185,6 @@ async function scanSessionAgents(): Promise<ScannedSessionAgent[]> {
   return Array.from(seen.values());
 }
 
-/** Wire shape of `GET /v1/sessions/{id}/agent` (AgentObject). */
-interface AgentObjectWire {
-  id: string;
-  name: string;
-  description?: string | null;
-  harness?: string | null;
-  skills?: { name: string; description: string }[];
-}
-
 /**
  * Enrich one scanned session agent into the picker's AvailableAgent
  * shape via `GET /v1/sessions/{id}/agent` (description, harness,
@@ -201,7 +193,10 @@ interface AgentObjectWire {
  * `_to_agent_object` degradation: one unloadable bundle must not
  * break discovery.
  */
-async function enrichSessionAgent(scanned: ScannedSessionAgent): Promise<AvailableAgent> {
+async function enrichSessionAgent(
+  scanned: ScannedSessionAgent,
+  queryClient: QueryClient,
+): Promise<AvailableAgent> {
   const fallback: AvailableAgent = {
     id: scanned.agentId,
     name: scanned.agentName,
@@ -214,17 +209,20 @@ async function enrichSessionAgent(scanned: ScannedSessionAgent): Promise<Availab
     // createdAt (used directly in the dedup), not from this object.
   };
   try {
-    const res = await authenticatedFetch(
-      `/v1/sessions/${encodeURIComponent(scanned.sessionId)}/agent`,
-    );
-    if (!res.ok) return fallback;
-    const json = (await res.json()) as AgentObjectWire;
+    // fetchQuery shares the ["session-agent", id] cache with useSessionAgent,
+    // so the open session's agent is a cache hit and other sessions populate
+    // the cache for free — avoiding duplicate fetches if useSessionAgent mounts.
+    const agent = await queryClient.fetchQuery({
+      queryKey: ["session-agent", scanned.sessionId],
+      queryFn: () => fetchSessionAgent(scanned.sessionId),
+      staleTime: Infinity,
+    });
     return {
       ...fallback,
-      display_name: displayNameForAgent(json.name, json.harness),
-      description: json.description ?? null,
-      harness: json.harness ?? null,
-      skills: json.skills ?? [],
+      display_name: displayNameForAgent(agent.name, agent.harness),
+      description: agent.description ?? null,
+      harness: agent.harness ?? null,
+      skills: agent.skills ?? [],
     };
   } catch {
     // Network-level failure — same best-effort degradation as the
@@ -266,7 +264,7 @@ async function enrichSessionAgent(scanned: ScannedSessionAgent): Promise<Availab
  * rather than blanking the picker — catalog availability must not be hostage
  * to the discovery extension.
  */
-async function fetchAvailableAgents(): Promise<AvailableAgent[]> {
+async function fetchAvailableAgents(queryClient: QueryClient): Promise<AvailableAgent[]> {
   const [catalog, scanned] = await Promise.all([
     fetchBuiltinAgents(),
     scanSessionAgents().catch(() => [] as ScannedSessionAgent[]),
@@ -329,7 +327,9 @@ async function fetchAvailableAgents(): Promise<AvailableAgent[]> {
   const resolved = (
     await Promise.all(
       Array.from(byName.values()).map((c) =>
-        c.template !== null ? Promise.resolve(c.template) : enrichSessionAgent(c.scanned!),
+        c.template !== null
+          ? Promise.resolve(c.template)
+          : enrichSessionAgent(c.scanned!, queryClient),
       ),
     )
   ).filter((agent) => {
@@ -348,9 +348,10 @@ interface UseAvailableAgentsOptions {
 }
 
 export function useAvailableAgents(options: UseAvailableAgentsOptions = {}) {
+  const queryClient = useQueryClient();
   return useQuery({
     queryKey: ["available-agents"],
-    queryFn: fetchAvailableAgents,
+    queryFn: () => fetchAvailableAgents(queryClient),
     enabled: options.enabled ?? true,
     staleTime: 30_000,
   });

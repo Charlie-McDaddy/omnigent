@@ -50,6 +50,8 @@ export interface Agent {
   mcp_servers_editable?: boolean;
   /** Guardrails policies declared on the agent. Empty when none configured. */
   policies?: PolicySummary[];
+  /** Skills bundled in the agent spec. Populated by `useSessionAgent`. */
+  skills?: { name: string; description: string }[];
   /** Terminal names declared in the spec's `terminals:` block, in
    * declaration order (e.g. ["shell"], or ["zsh", "bash"] for a native
    * session offering the host's installed shells, default first). Gates
@@ -121,6 +123,7 @@ interface AgentObjectWire {
   name: string;
   description?: string | null;
   harness?: string | null;
+  skills?: { name: string; description: string }[];
   mcp_servers?: McpServerSummary[];
   mcp_servers_editable?: boolean;
   policies?: PolicySummary[];
@@ -133,7 +136,7 @@ interface AgentObjectWire {
  *
  * :param sessionId: The session whose bound agent to retrieve.
  */
-async function fetchSessionAgent(sessionId: string): Promise<Agent> {
+export async function fetchSessionAgent(sessionId: string): Promise<Agent> {
   const res = await authenticatedFetch(`/v1/sessions/${encodeURIComponent(sessionId)}/agent`);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   const json = (await res.json()) as AgentObjectWire;
@@ -142,6 +145,7 @@ async function fetchSessionAgent(sessionId: string): Promise<Agent> {
     name: json.name,
     description: json.description,
     harness: json.harness ?? null,
+    skills: json.skills ?? [],
     mcp_servers: json.mcp_servers,
     mcp_servers_editable: json.mcp_servers_editable,
     policies: json.policies,
