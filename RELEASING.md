@@ -84,8 +84,9 @@ gh workflow run release.yml --repo omnigent-ai/omnigent \
 
 What it does (all idempotent):
 
-- asserts green CI on the base commit (escape hatch for a flaky check:
-  `-f skip_ci_check=true`, use deliberately);
+- asserts green CI on the base commit (escape hatch: `-f skip_ci_check=true`,
+  use deliberately — needed for a flaky check, or when the base commit ran no
+  checks at all, e.g. a cherry-pick that only touched `paths-ignore`d files);
 - creates `branch-0.6` from `ref` (rc1) or reuses the existing branch head
   (rc2+, final, patches — `ref` is ignored then);
 - stamps the lockstep version via `scripts/update_versions.py` and regenerates

@@ -202,10 +202,12 @@ jobs:
             fi
           done
           [ "$fail" -eq 0 ]
-          # The lockstep siblings must have moved with the release.
+          # The lockstep siblings must have moved with the release. Match the
+          # sdist filename (PEP 503-normalized name + version) in the resource
+          # url, not a bare version substring.
           version="${TAG#v}"
           for sib in omnigent-client omnigent-ui-sdk; do
-            if ! grep -A2 "resource \"${sib}\"" Formula/omnigent.rb | grep -q "${version}"; then
+            if ! grep -A2 "resource \"${sib}\"" Formula/omnigent.rb | grep -q "${sib//-/_}-${version}"; then
               echo "::error::resource ${sib} did not update to ${version}."
               exit 1
             fi

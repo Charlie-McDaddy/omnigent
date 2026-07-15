@@ -77,15 +77,17 @@ jobs:
 
       # Drafts are invisible to read-only tokens and unaddressable by tag
       # (the get-by-tag endpoint 404s on drafts) — resolve by listing with the
-      # App token, same as draft-release-notes.yml.
-      - name: Mint App token (omnigent)
+      # App token, same as draft-release-notes.yml. Scoped to BOTH repos: an
+      # installation token cannot reach outside its grant, and the docs sweep
+      # below queries omnigent-site.
+      - name: Mint App token (omnigent + omnigent-site)
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ vars.OMNIGENT_BOT_APP_ID }}
           private-key: ${{ secrets.OMNIGENT_BOT_APP_KEY }}
           owner: ${{ github.repository_owner }}
-          repositories: omnigent
+          repositories: omnigent,omnigent-site
 
       - name: Resolve the draft release
         id: draft
