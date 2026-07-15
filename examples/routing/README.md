@@ -9,9 +9,13 @@ and a pool of coding sub-agents. Given a scoped task it:
 3. reviews their resulting work itself, and
 4. reports a summary and verdict back upstream.
 
-It never writes or edits code, prose, or any file itself — every write/edit
-tool call is denied at the policy layer (see "Enforcing the write/edit
-constraint" below), not just discouraged by the prompt.
+It never writes or edits code, prose, or any file itself. It has no `os_env`
+at all, so `sys_os_read` / `sys_os_write` / `sys_os_edit` / `sys_os_shell`
+and terminals are never registered as tools it can call in the first place —
+there is no mechanism for it to touch the filesystem, let alone write to it
+(see "Enforcing the never write or edit constraint" below). It reviews
+sub-agent work from the diffs, reports, and command output its sub-agents
+include as text in their own deliverable.
 
 Run it with a configured OpenAI-compatible / gateway provider:
 
@@ -54,22 +58,43 @@ Routing differs from Polly in two deliberate ways:
   Polly's `cross-review` skill always hands a diff to a *different-vendor*
   sub-agent for the final verdict. Routing may still dispatch a `review`
   sub-agent for a second opinion on a hard task, but per this task's
-  requirement it always forms and reports its **own** verdict from the
-  implementer's report (and any `gh pr view` / `git log` it reads) before
-  answering upstream.
+  requirement it always forms and reports its **own** verdict — reading only
+  the diff, PR description, and any `gh pr view` / `git log` output the
+  sub-agent chose to include as text in its report, since Routing has no
+  shell of its own to run those commands directly — before answering
+  upstream.
 
 ## Enforcing the "never write or edit" constraint
 
-Routing needs read access to review a sub-agent's reported diff (`gh pr
-view`, `git log`, `git diff`), so — unlike the fully tool-free
-[`examples/orchestrator`](../orchestrator), which has no `os_env` at all —
-Routing declares `os_env` with `sandbox: {type: none}`. The write/edit
-boundary is instead enforced at the **policy layer**, mechanically, the same
-"mechanism-layer enforcement — runner-side tool gate, no server change" style
-Polly's own `guardrails` comment uses in
-[`examples/polly/config.yaml`](../polly/config.yaml) — see
-[`docs/POLICIES.md`](../../docs/POLICIES.md) for how spec-level policies like
-this one are evaluated:
+An earlier draft of this bundle declared `os_env` with `sandbox: {type:
+none}` (an unsandboxed shell) and relied only on a `read_only_os` policy to
+deny the *named* write/edit tool calls. That is not sufficient: a `sandbox:
+none` `sys_os_shell` can still mutate the filesystem through commands that
+aren't a `sys_os_write` / `sys_os_edit` call at all — `sed -i`, `tee`,
+`echo … > file`, `git apply`, `python -c "open(...).write(...)"`, and so on —
+and `read_only_os` only pattern-matches specific tool names, not shell
+command content, so none of that would have been caught. Genuinely
+read-only shell would need an allow-list of specific commands (`git log`,
+`git diff`, `gh pr view`, `cat`, `ls`, `grep`, …) enforced against the actual
+command string, and no such policy exists in this codebase today.
+
+Rather than invent and rely on a new, unreviewed command-allowlist policy for
+a hard "never write" contract, Routing declares **no `os_env` at all** — the
+same choice [`examples/orchestrator`](../orchestrator) makes. Per
+[`docs/AGENT_YAML_SPEC.md`](../../docs/AGENT_YAML_SPEC.md) ("Declare `os_env`
+only for agents that need local file/shell tools"), omitting the block means
+`sys_os_read` / `sys_os_write` / `sys_os_edit` / `sys_os_shell` are never
+registered as tools Routing can call, and it gets no terminals either. There
+is no mechanism left for it to touch a file, write or otherwise — not a
+narrower shell, no shell at all. Routing reviews sub-agent work purely from
+the diff, PR description, and any `gh pr view` / `git log` output its
+sub-agents choose to include as text in their own IMPLEMENT / REVIEW report
+(see the prompt's REVIEW section) — the same shape as Polly's `cross-review`
+skill, which hands a reviewer sub-agent a diff + contract as text rather than
+worktree access.
+
+`guardrails.policies.read_only_os` is kept anyway, as defense-in-depth rather
+than the primary guard:
 
 ```yaml
 guardrails:
@@ -84,12 +109,15 @@ guardrails:
 [`omnigent.inner.nessie.policies.read_only_os`](../../omnigent/inner/nessie/policies.py)
 is a built-in factory that DENIES `sys_os_write` / `sys_os_edit` and the
 Claude/Codex/Pi native `Write` / `Edit` / `MultiEdit` aliases at the tool-call
-gate, while leaving reads, searches, and shell untouched — its own docstring
-names exactly this use case: "agents whose contract is to investigate and
-report, never to change code." Routing's `blast_radius` policy keeps the
-default `gate_pushes: true` (unlike Polly's unattended `gate_pushes: false`),
-since Routing itself should never push or merge anything — only its
-sub-agents do, from their own worktrees.
+gate — its own docstring names exactly this use case: "agents whose contract
+is to investigate and report, never to change code." With no `os_env`
+declared, none of those tools are normally registered for Routing to begin
+with, so this policy currently has nothing to catch; it stays in the bundle
+so that if a future edit adds `os_env` (or a native harness surfaces its own
+write tool) without revisiting this section, the write/edit boundary is still
+denied at the policy layer instead of silently reopening. Polly's
+`blast_radius` policy (which gates outward/destructive shell like `git push`)
+is not included here at all, since Routing has no shell tool for it to gate.
 
 ## Model identifier
 
@@ -115,6 +143,24 @@ anywhere in-repo, a human should confirm the real id (and whether it needs a
 `databricks-` gateway prefix, per
 [`omnigent/model_override.py`](../../omnigent/model_override.py)'s
 `normalize_model_for_provider`) before this agent is run against a live
-provider — an unresolvable id fails loud at dispatch/launch rather than
-silently, per that same module's family-mismatch guard, but that only
-catches it at runtime, not at config-authoring time.
+provider.
+
+To be precise about what does and doesn't catch a wrong id here: `gpt-5.6-sol`
+is Routing's own top-level `executor.model`, not a per-dispatch sub-agent
+override, so `model_override.py`'s `validate_model_override` /
+`model_family_mismatch` guards don't run against it at all — those only fire
+"at the `sys_session_send` dispatch gate" (per that module's own docstrings),
+i.e. when Routing dispatches a worker with an explicit `args.model`. Neither
+[`omnigent/spec/parser.py`](../../omnigent/spec/parser.py) (`_parse_executor`
+just stores `executor.model` as a string) nor
+[`omnigent/spec/validator.py`](../../omnigent/spec/validator.py) /
+[`omnigent/spec/_omnigent_compat.py`](../../omnigent/spec/_omnigent_compat.py)
+(`validate_omnigent_executor` checks only `executor.config.harness`) validate
+the *content* of a top-level `executor.model` string — confirmed by running
+this bundle through `omnigent.spec.parser.parse` +
+`omnigent.spec.validator.validate` below, which reports it as valid
+regardless of whether `gpt-5.6-sol` actually resolves to a real model. So an
+incorrect id here is not caught by schema validation or by any dispatch-time
+guard; it would only surface as a runtime failure from the resolved
+OpenAI-compatible / gateway provider (e.g. a "model not found"-style API
+error) the first time Routing is actually run against live credentials.
