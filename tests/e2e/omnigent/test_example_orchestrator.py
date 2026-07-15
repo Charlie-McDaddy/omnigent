@@ -26,7 +26,7 @@ def orchestrator_spec() -> AgentSpec:
 
 
 def test_orchestrator_model_and_harness(orchestrator_spec: AgentSpec) -> None:
-    """Orchestrator pins canonical Claude Fable 5 on the Claude SDK."""
+    """Orchestrator pins the assumed Claude Fable 5 ID on the Claude SDK."""
     assert orchestrator_spec.name == "orchestrator"
     assert orchestrator_spec.executor.model == "claude-fable-5"
     assert orchestrator_spec.executor.config.get("harness") == "claude-sdk"
@@ -63,8 +63,12 @@ def test_orchestrator_denies_every_tool_call(orchestrator_spec: AgentSpec) -> No
     assert policy.function.arguments == {"limit": 0}
     module, _, name = policy.function.path.rpartition(".")
     factory = getattr(importlib.import_module(module), name)
+    # No session_state means the true first-call path: count defaults to zero.
     response = factory(**policy.function.arguments)({"type": "tool_call"})
-    assert response["result"] == "DENY"
+    assert response == {
+        "result": "DENY",
+        "reason": "Exceeded 0 tool calls this session",
+    }
 
 
 def test_orchestrator_prompt_declares_only_plan_and_review(orchestrator_spec: AgentSpec) -> None:

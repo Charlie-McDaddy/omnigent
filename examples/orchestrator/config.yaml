@@ -15,6 +15,7 @@ description: >-
 
 executor:
   type: omnigent
+  # ASSUMPTION: canonical ID unconfirmed — see README § Model identifier.
   model: claude-fable-5
   config:
     harness: claude-sdk

@@ -34,16 +34,27 @@ interaction modalities are text-only.
 
 ## Model identifier
 
-The model is pinned with the canonical ID `claude-fable-5`. Omnigent's static
-Claude catalog lists that ID in
-[`omnigent/model_catalog.py`](../../omnigent/model_catalog.py), while the
-Databricks gateway shim and its tests explicitly recognize
-`databricks-claude-fable-5` in
-[`omnigent/inner/claude_gateway_shim.py`](../../omnigent/inner/claude_gateway_shim.py)
-and
-[`tests/inner/test_claude_gateway_shim.py`](../../tests/inner/test_claude_gateway_shim.py).
-Omnigent's provider normalization converts canonical Claude IDs to the
-Databricks-prefixed endpoint spelling when a Databricks provider is resolved,
-and keeps the canonical spelling for direct Anthropic or subscription routing;
-see [`omnigent/model_override.py`](../../omnigent/model_override.py). This keeps
-the example portable while still selecting the Fable 5 endpoint on Databricks.
+We could not conclusively confirm a single canonical spelling for "Claude Fable
+5" across every provider. Based on the repository evidence below, this example
+**assumes** `claude-fable-5` is correct for direct API and subscription routing,
+and that Omnigent normalizes it to `databricks-claude-fable-5` for Databricks.
+This assumption should be revisited if the target provider rejects that model
+ID or exposes Fable 5 under a different endpoint name.
+
+Evidence supporting—but not conclusively proving—the assumption:
+
+- Omnigent's static subscription catalog includes `claude-fable-5` in
+  [`omnigent/model_catalog.py`](../../omnigent/model_catalog.py).
+- The Databricks gateway shim recognizes the `databricks-claude-fable-` prefix,
+  and its test exercises the concrete `databricks-claude-fable-5` spelling in
+  [`omnigent/inner/claude_gateway_shim.py`](../../omnigent/inner/claude_gateway_shim.py)
+  and
+  [`tests/inner/test_claude_gateway_shim.py`](../../tests/inner/test_claude_gateway_shim.py).
+- Omnigent's generic provider normalization prepends `databricks-` to bare
+  Claude/GPT identifiers for Databricks and strips that prefix for direct key or
+  subscription providers; see
+  [`omnigent/model_override.py`](../../omnigent/model_override.py).
+
+These sources establish that both spellings are understood by relevant parts of
+this repository, but they do not verify that every deployed provider exposes
+Fable 5 under either name.
