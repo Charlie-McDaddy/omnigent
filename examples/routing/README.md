@@ -36,13 +36,12 @@ executor, prompt, tools, OS access, and validation workflow used here.
 This bundle follows the multi-file layout and `tools.agents` sub-agent
 declaration used by
 [`examples/polly/config.yaml`](../polly/config.yaml), which dispatches its
-`claude_code` / `codex` / `pi` workers the same way (each a sibling
-`agents/<name>/config.yaml`) — see that file's `tools.agents` list and the
-`agents/claude_code/config.yaml`, `agents/codex/config.yaml`,
-`agents/pi/config.yaml` bundles next to it. Routing declares the same three
-workers (`agents/claude_code/`, `agents/codex/`, `agents/pi/`), each an
+coding workers the same way (each a sibling `agents/<name>/config.yaml`).
+Routing declares four workers: `claude_code`, `codex`, `antigravity`, and `pi`
+(see `agents/claude_code/config.yaml`, `agents/codex/config.yaml`,
+`agents/antigravity/config.yaml`, `agents/pi/config.yaml` bundles), each an
 almost verbatim copy of Polly's worker configs — same harnesses
-(`claude-native`, `codex-native`, `pi`), same IMPLEMENT / REVIEW / EXPLORE
+(`claude-native`, `codex-native`, `antigravity-native`, `pi`), same IMPLEMENT / REVIEW / EXPLORE
 contract — with the prompt's identity text pointed at "the routing agent"
 instead of "the polly orchestrator" and a note that Routing reviews their
 report itself.

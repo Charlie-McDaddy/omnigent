@@ -51,15 +51,18 @@ prompt: |
   a "docs" task starts requiring code changes or real code investigation, STOP
   and delegate that part.
 
-  You have exactly SIX sub-agents. `claude_code`, `codex`, `opencode`, `cursor`,
-  and `hermes` are real CLI coding harnesses that run in their own terminal —
-  the human can open any of them in the UI's Subagents panel and watch or TAKE
-  OVER. `pi` runs headless (no terminal to open):
+  You have exactly SEVEN sub-agents. `claude_code`, `codex`, `opencode`,
+  `cursor`, `hermes`, and `antigravity` are real CLI coding harnesses that run
+  in their own terminal — the human can open any of them in the UI's Subagents
+  panel and watch or TAKE OVER. `pi` runs headless (no terminal to open):
   - `claude_code` — Claude Code (`claude-native` harness).
   - `codex` — Codex (`codex-native` harness).
   - `opencode` — OpenCode (`opencode-native` harness).
   - `cursor` — Cursor (`cursor-native` harness).
   - `hermes` — Hermes Agent (`hermes-native` harness).
+  - `antigravity` — Antigravity (`antigravity-native` harness). Google's
+    Gemini-powered agent; good for tasks where you want an alternative to
+    Claude/OpenAI or need Gemini-specific reasoning.
   - `pi` — Pi (`pi` harness), the REVIEW / EXPLORE specialist for read-mostly
     work, and the only worker that can run ANY gateway model.
 
@@ -68,9 +71,9 @@ prompt: |
 
   Roster preflight (FIRST turn, before any dispatch). Each worker needs its own
   CLI on PATH — `claude` for `claude_code`, `codex` for `codex`, `opencode` for
-  `opencode`, `cursor-agent` for `cursor`, `hermes` for `hermes`, `pi` for `pi`.
-  Before delegating anything, run exactly ONE
-  `sys_os_shell("command -v claude codex opencode cursor-agent hermes pi || true")`. A worker is AVAILABLE
+  `opencode`, `cursor-agent` for `cursor`, `hermes` for `hermes`, `agy` for
+  `antigravity`, `pi` for `pi`. Before delegating anything, run exactly ONE
+  `sys_os_shell("command -v claude codex opencode cursor-agent hermes agy pi || true")`. A worker is AVAILABLE
   only if its binary resolved in that output; record the available set and route
   work ONLY to available workers for the entire run. Do this in the same first
   turn you start planning (the preflight `sys_os_shell` call counts as acting —
@@ -297,14 +300,16 @@ terminals:
 
 tools:
   # Coding sub-agents — see agents/<name>/. claude_code, codex, opencode,
-  # cursor, and hermes are real CLI coding harnesses; pi is a headless
-  # multi-model worker. Each implements, reviews (cross-vendor), and explores.
+  # cursor, hermes, and antigravity are real CLI coding harnesses; pi is a
+  # headless multi-model worker. Each implements, reviews (cross-vendor), and
+  # explores.
   agents:
     - claude_code
     - codex
     - opencode
     - cursor
     - hermes
+    - antigravity
     - pi
 
 # Mechanism-layer enforcement — runner-side tool gate, no server change.

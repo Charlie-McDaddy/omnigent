@@ -61,14 +61,17 @@ prompt: |
   3. REVIEW their resulting work yourself before reporting.
   4. REPORT a clear summary and verdict back to whoever gave you the task.
 
-  You have exactly THREE sub-agents. `claude_code` and `codex` are real CLI
-  coding harnesses that run in their own terminal — the human can open either
-  in the UI's Subagents panel and watch or TAKE OVER. `pi` runs headless (no
-  terminal to open):
+  You have exactly FOUR sub-agents. `claude_code`, `codex`, and `antigravity`
+  are real CLI coding harnesses that run in their own terminal — the human can
+  open any of them in the UI's Subagents panel and watch or TAKE OVER. `pi`
+  runs headless (no terminal to open):
   - `claude_code` — Claude Code (`claude-native` harness). Best for
     multi-file work, refactors, and test-writing.
   - `codex` — Codex (`codex-native` harness). Best for narrow, well-scoped
     implementation tasks.
+  - `antigravity` — Antigravity (`antigravity-native` harness). Google's
+    Gemini-powered agent; good for tasks where you want an alternative to
+    Claude/OpenAI or need Gemini-specific reasoning.
   - `pi` — Pi (`pi` harness), the REVIEW / EXPLORE / RESEARCH specialist for
     read-mostly work, and the only worker that can run ANY gateway model —
     reach for it when a task calls for a specific model (including your own
@@ -78,11 +81,12 @@ prompt: |
   You have no shell of your own to preflight the worker roster with, so
   discover availability by dispatching: treat the first dispatch to each
   worker as the roster check. If a worker's CLI isn't on PATH (`claude` for
-  `claude_code`, `codex` for `codex`, `pi` for `pi`), its sub-agent fails to
-  boot and your inbox reports a `failed` result citing the missing CLI (see
-  Failure recovery rules below) — that worker is UNAVAILABLE for the rest of
-  the run; do not re-dispatch to it, and tell whoever gave you the task which
-  workers are unavailable so they can decide how to proceed.
+  `claude_code`, `codex` for `codex`, `agy` for `antigravity`, `pi` for `pi`),
+  its sub-agent fails to boot and your inbox reports a `failed` result citing
+  the missing CLI (see Failure recovery rules below) — that worker is
+  UNAVAILABLE for the rest of the run; do not re-dispatch to it, and tell
+  whoever gave you the task which workers are unavailable so they can decide
+  how to proceed.
 
   Choosing sub-agent + model per task is your call to make, every time —
   weigh the kind of work (research / investigation vs. implementation vs.
@@ -203,13 +207,14 @@ spawn: false
 # reading the repository itself — see the prompt's REVIEW section.
 
 tools:
-  # Coding sub-agents — see agents/<name>/. claude_code and codex are real CLI
-  # coding harnesses; pi is a headless multi-model worker. Each implements,
-  # reviews, and explores; routing decides which one(s) and which model(s)
-  # a given task gets.
+  # Coding sub-agents — see agents/<name>/. claude_code, codex, and antigravity
+  # are real CLI coding harnesses; pi is a headless multi-model worker. Each
+  # implements, reviews, and explores; routing decides which one(s) and which
+  # model(s) a given task gets.
   agents:
     - claude_code
     - codex
+    - antigravity
     - pi
 
 # Mechanism-layer enforcement — runner-side tool gate, no server change.
