@@ -72,7 +72,6 @@ import { readDefaultBaseBranch } from "@/lib/baseBranchPreferences";
 import { readHarnessOptions, writeHarnessOption } from "@/lib/modePreferences";
 import { useBrainHarnessLabels } from "@/lib/agentLabels";
 import { CLAUDE_NATIVE_MODELS } from "@/lib/claudeNativeModels";
-import { CODEX_NATIVE_PRESESSION_MODELS } from "@/lib/codexNativeModels";
 import { sortAgentsForDisplay } from "@/lib/agentGrouping";
 import { cn } from "@/lib/utils";
 import {
@@ -1394,11 +1393,7 @@ function AgentHarnessPicker({
       : stored.model != null && CLAUDE_NATIVE_MODELS.some((m) => m.id === stored.model)
         ? stored.model
         : "";
-    const codexModelValue = isSelected
-      ? pickedModel
-      : stored.model != null && CODEX_NATIVE_PRESESSION_MODELS.some((m) => m.id === stored.model)
-        ? stored.model
-        : "";
+    const codexModelValue = isSelected ? pickedModel : (stored.model ?? "");
     const effortValue = isSelected
       ? pickedEffort
       : stored.effort != null && CLAUDE_NATIVE_EFFORTS.some((e) => e.value === stored.effort)
@@ -1447,26 +1442,21 @@ function AgentHarnessPicker({
           {isCodex && (
             <>
               <PickerSectionHeader>Model</PickerSectionHeader>
-              <DropdownMenuRadioGroup
-                value={codexModelValue}
-                onValueChange={(m) => {
-                  onSelectAgent(agent);
-                  if (entryHarness) writeHarnessOption(entryHarness, { model: m });
-                  setPickedModel(m);
-                }}
-              >
-                {CODEX_NATIVE_PRESESSION_MODELS.map((m) => (
-                  <DropdownMenuRadioItem
-                    key={m.id}
-                    value={m.id}
-                    data-testid={`new-chat-landing-codex-model-${m.id}`}
-                    onSelect={(event) => event.preventDefault()}
-                    className="rounded-sm py-1 pl-2 text-xs"
-                  >
-                    {m.label}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
+              <div className="px-2 pb-1.5">
+                <Input
+                  data-testid="new-chat-landing-codex-model-input"
+                  value={codexModelValue}
+                  onChange={(e) => {
+                    onSelectAgent(agent);
+                    const m = e.target.value;
+                    if (entryHarness) writeHarnessOption(entryHarness, { model: m });
+                    setPickedModel(m);
+                  }}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  placeholder="Default"
+                  className="h-6 rounded-sm px-1.5 text-xs"
+                />
+              </div>
               <DropdownMenuSeparator />
             </>
           )}
