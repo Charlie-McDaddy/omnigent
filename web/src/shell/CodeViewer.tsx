@@ -376,12 +376,32 @@ export function CodeViewer({
     matchLineRefs.current.get(idx)?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [searchQuery, currentMatchIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Open search on Cmd+F / Ctrl+F.
-  // Don't intercept in markdown editor mode — the custom search bar isn't
-  // available there, so let the browser's native find handle it instead.
   const isMarkdownEditor = viewMode === "editor" && lang === "markdown";
+
+  // Markdown editor mode has its own find bar (MarkdownSearchBar), driven by the
+  // shared `searchOpen` toggle. Cmd+F opens it and Escape closes it; the bar
+  // also handles Escape while its input is focused, but this covers the case
+  // where focus is in the editor body.
   useEffect(() => {
-    // Skip in Monaco mode too — Monaco owns Cmd+F (native find).
+    if (!panelOpen || !isMarkdownEditor) return;
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+        e.preventDefault();
+        setSearchOpen(true);
+        setTimeout(() => searchInputRef.current?.focus(), 0);
+      } else if (e.key === "Escape" && searchOpen) {
+        e.preventDefault();
+        setSearchOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [panelOpen, isMarkdownEditor, searchOpen, setSearchOpen, searchInputRef]);
+
+  // Open search on Cmd+F / Ctrl+F in the Shiki source view.
+  useEffect(() => {
+    // Skip in Monaco mode (Monaco owns Cmd+F) and markdown editor mode (handled
+    // above with its own find bar).
     if (!panelOpen || isMarkdownEditor || showMonaco) return;
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "f") {
@@ -569,6 +589,9 @@ export function CodeViewer({
         activeSelection={activeSelection}
         onSetActiveSelection={onSetActiveSelection}
         pendingBodyRef={pendingBodyRef}
+        searchOpen={searchOpen}
+        onSearchHandled={handleSearchHandled}
+        searchInputRef={searchInputRef}
       />
     );
   }
