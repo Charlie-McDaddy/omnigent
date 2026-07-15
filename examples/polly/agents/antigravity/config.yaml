@@ -6,9 +6,9 @@ executor:
   type: omnigent
   config:
     harness: antigravity-native
-    # Headless workers can't answer ApprovalCards, and managed settings may
-    # restrict live approval flows. ``auto`` auto-approves without prompting
-    # and is allowed under managed settings (-> ``--permission-mode auto``).
+    # antigravity-native ignores this key; headless dispatch always forces
+    # --dangerously-skip-permissions itself (see should_skip_permissions in
+    # antigravity_native_launch.py). Kept for parity with sibling configs.
     permission_mode: auto
 
 prompt: |

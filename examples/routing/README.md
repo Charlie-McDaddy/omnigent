@@ -50,7 +50,7 @@ Routing differs from Polly in two deliberate ways:
 
 - **`spawn: false`.** Polly sets `spawn: true` so it can author and launch
   brand-new custom agent configs on the fly (`sys_session_create`). Routing
-  only ever dispatches its three declared workers, so it gets no
+  only ever dispatches its four declared workers, so it gets no
   `sys_session_create` and `guardrails.policies.spawn_bounds.dispatch_tools`
   lists only `sys_session_send`.
 - **Review is Routing's own job, not just a cross-vendor sub-agent's.**

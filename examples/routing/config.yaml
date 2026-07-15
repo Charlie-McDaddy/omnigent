@@ -22,7 +22,8 @@ spec_version: 1
 name: routing
 description: >-
   A dispatch-and-oversight agent that sits between an orchestrator and a pool
-  of coding sub-agents (claude_code / codex / pi). Given a scoped task, it
+  of coding sub-agents (claude_code / codex / antigravity / pi). Given a
+  scoped task, it
   decides which sub-agent(s) and model(s) to run, dispatches and supervises
   them to completion, reviews their resulting work itself, and reports a
   summary and verdict back to the orchestrator. Routing never writes or

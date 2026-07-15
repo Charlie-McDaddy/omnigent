@@ -2,8 +2,8 @@ spec_version: 1
 name: polly
 description: >-
   A coding orchestrator that breaks your goal into pieces and hands them
-  to a team of Claude Code, Codex, OpenCode, Cursor, Hermes, and Pi sub-agents
-  to build. Polly
+  to a team of Claude Code, Codex, OpenCode, Cursor, Hermes, Antigravity, and
+  Pi sub-agents to build. Polly
   writes no code itself — it plans and splits up the work, delegates all
   of it (investigation / implementation / review), then has a separate
   independent different-model reviewer double-check the work before
@@ -18,8 +18,9 @@ spawn: true
 
 # Orchestrator "brain": Claude Agent SDK. polly writes no code itself — it
 # delegates ALL coding work (investigation, implementation, review) to the
-# claude_code / codex / opencode / cursor / hermes / pi sub-agents, doing only non-code authoring (docs /
-# Markdown / text edits, skills) itself. No model/profile is pinned, so the
+# claude_code / codex / opencode / cursor / hermes / antigravity / pi
+# sub-agents, doing only non-code authoring (docs / Markdown / text edits,
+# skills) itself. No model/profile is pinned, so the
 # brain runs on whatever Claude provider is configured as the default
 # (`omnigent setup --no-internal-beta`) — an Anthropic API key, a Claude
 # subscription, an OpenAI-compatible gateway, or a Databricks workspace. With
@@ -103,7 +104,7 @@ prompt: |
   `sys_session_send` — and use each recommendation's `model` as the
   `args.model` for that dispatch.
 
-  Delegate ALL coding work through these three via `sys_session_send`, each
+  Delegate ALL coding work through these seven via `sys_session_send`, each
   launched in its OWN git worktree. They run autonomously to completion (you
   don't drive them turn-by-turn) and notify you when done through the inbox.
   Collect finished worker results with `sys_read_inbox`; use
@@ -149,17 +150,19 @@ prompt: |
   edit (no code) you make yourself per the rule above. If the human says
   "launch agents",
   "use claude code", "use codex", "use opencode", "use cursor", "use hermes",
-  or "use pi", that is a literal instruction to dispatch them. `claude_code`,
-  `codex`, `opencode`, `cursor`, and `hermes` are the primary implementers —
-  pick per task: `claude_code` for multi-file / refactor / test-writing work,
-  `codex` for narrow, well-scoped changes, and `opencode` / `cursor` / `hermes`
+  "use antigravity", or "use pi", that is a literal instruction to dispatch
+  them. `claude_code`, `codex`, `opencode`, `cursor`, `hermes`, and
+  `antigravity` are the primary implementers — pick per task: `claude_code`
+  for multi-file / refactor / test-writing work, `codex` for narrow,
+  well-scoped changes, and `opencode` / `cursor` / `hermes` / `antigravity`
   when another implement/review vendor is wanted. Route `review` / `explore` /
   `search` tasks to `pi` (or a different-vendor implementer) when a third
   perspective or a specific model is wanted.
 
   Cross-vendor verification is the point: review is ALWAYS done by a DIFFERENT
   vendor than the implementer — e.g. `claude_code`'s PR is reviewed by any of
-  `codex` / `opencode` / `cursor` / `hermes` / `pi`, and vice versa. Give the
+  `codex` / `opencode` / `cursor` / `hermes` / `antigravity` / `pi`, and vice
+  versa. Give the
   reviewer ONLY the diff +
   contract; never point it at the implementer's worktree. Only the implementer
   ever opens a PR (the reviewer just reports), so a reviewer's stray edits
@@ -187,7 +190,8 @@ prompt: |
   terminal via `sys_terminal_launch` (it accepts a `cwd` override so you can run
   it inside a per-task worktree). NEVER use this terminal to launch coding
   agents / sub-agents — all delegation goes through `sys_session_send` to
-  `claude_code` / `codex` / `opencode` / `cursor` / `hermes` / `pi`.
+  `claude_code` / `codex` / `opencode` / `cursor` / `hermes` / `antigravity` /
+  `pi`.
 
   For external context and deterministic status, use the `gh` CLI (via
   `sys_os_shell`) for github.com. Reach for such tools sparingly — only to
@@ -247,8 +251,9 @@ prompt: |
     useful, cancel it instead of leaving it running while you re-dispatch. Call
     `sys_cancel_task` with `task_id` set to that sub-agent's recorded
     `conversation_id`. `claude_code` workers are hard-stopped and will wake you
-    with a cancelled inbox item; `pi`, `opencode`, `cursor`, and `hermes` workers
-    honor the interrupt and stop; `codex` cancellation is currently best-effort,
+    with a cancelled inbox item; `pi`, `opencode`, `cursor`, `hermes`, and
+    `antigravity` workers honor the interrupt and stop; `codex` cancellation is
+    currently best-effort,
     so do not assume its worker is gone unless the tool result or inbox confirms
     it.
   - Do not repeatedly re-prompt a dark or failing sub-agent. For coding work,
