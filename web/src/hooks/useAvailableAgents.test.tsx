@@ -3,7 +3,7 @@ import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useAvailableAgents } from "./useAvailableAgents";
+import { useAvailableAgents, prefetchAvailableAgentDetails } from "./useAvailableAgents";
 
 // The hook unions the built-in agent list from GET /v1/agents with
 // custom agents discovered on the caller's sessions via
@@ -700,5 +700,145 @@ describe("useAvailableAgents", () => {
         skills: [],
       },
     ]);
+  });
+});
+
+describe("prefetchAvailableAgentDetails", () => {
+  it("patches harness, description, and skills into the cache on success", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const agent = {
+      id: "ag_doc",
+      name: "doc-writer",
+      display_name: "Doc-writer",
+      description: null,
+      harness: null,
+      skills: [],
+      sessionId: "conv_3",
+    };
+    queryClient.setQueryData(["available-agents"], [agent]);
+
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({
+        id: "ag_doc",
+        object: "agent",
+        name: "doc-writer",
+        description: "Documentation specialist",
+        harness: "claude-sdk",
+        skills: [{ name: "humanizer", description: "Remove AI writing patterns" }],
+      }),
+    );
+
+    await prefetchAvailableAgentDetails(agent, queryClient);
+
+    expect(queryClient.getQueryData(["available-agents"])).toEqual([
+      {
+        id: "ag_doc",
+        name: "doc-writer",
+        display_name: "Doc-writer",
+        description: "Documentation specialist",
+        harness: "claude-sdk",
+        sessionId: "conv_3",
+        skills: [{ name: "humanizer", description: "Remove AI writing patterns" }],
+      },
+    ]);
+    expect(fetchMock.mock.calls[0][0]).toBe("/v1/sessions/conv_3/agent");
+  });
+
+  it("is a no-op when harness is already populated", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const agent = {
+      id: "ag_doc",
+      name: "doc-writer",
+      display_name: "Doc-writer",
+      description: null,
+      harness: "claude-sdk",
+      skills: [],
+      sessionId: "conv_3",
+    };
+    queryClient.setQueryData(["available-agents"], [agent]);
+
+    await prefetchAvailableAgentDetails(agent, queryClient);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData(["available-agents"])).toEqual([agent]);
+  });
+
+  it("is a no-op when sessionId is absent (catalog agent)", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const agent = {
+      id: "ag_native",
+      name: "claude-native-ui",
+      display_name: "Claude Code",
+      description: null,
+      harness: null,
+      skills: [],
+    };
+    queryClient.setQueryData(["available-agents"], [agent]);
+
+    await prefetchAvailableAgentDetails(agent, queryClient);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("leaves the agent name-only when the enrich fetch fails", async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const agent = {
+      id: "ag_doc",
+      name: "doc-writer",
+      display_name: "Doc-writer",
+      description: null,
+      harness: null,
+      skills: [],
+      sessionId: "conv_3",
+    };
+    queryClient.setQueryData(["available-agents"], [agent]);
+
+    fetchMock.mockResolvedValueOnce(mockResponse({ detail: "boom" }, { ok: false, status: 500 }));
+
+    await prefetchAvailableAgentDetails(agent, queryClient);
+
+    // Cache unchanged — agent stays with scan-only fields.
+    expect(queryClient.getQueryData(["available-agents"])).toEqual([agent]);
+  });
+
+  it("removes a session agent when enrichment reveals it is a native shadow", async () => {
+    // A session bound a kiro agent with a non-canonical name ("kiro-naitive"
+    // typo). On initial load harness is null so it passes the kiro filter.
+    // prefetchAvailableAgentDetails detects harness: "kiro-native" after
+    // enrichment and removes the agent since a seeded kiro built-in exists.
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const kiroBuiltin = {
+      id: "ag_kiro",
+      name: "kiro-native-ui",
+      display_name: "Kiro",
+      description: null,
+      harness: "kiro-native",
+      skills: [],
+    };
+    const kiroShadow = {
+      id: "ag_session_kiro",
+      name: "kiro-naitive",
+      display_name: "Kiro-naitive",
+      description: null,
+      harness: null,
+      skills: [],
+      sessionId: "conv_kiro",
+    };
+    queryClient.setQueryData(["available-agents"], [kiroBuiltin, kiroShadow]);
+
+    fetchMock.mockResolvedValueOnce(
+      mockResponse({
+        id: "ag_session_kiro",
+        object: "agent",
+        name: "kiro-naitive",
+        harness: "kiro-native",
+        skills: [],
+      }),
+    );
+
+    await prefetchAvailableAgentDetails(kiroShadow, queryClient);
+
+    // Shadow removed; only the seeded built-in remains.
+    expect(queryClient.getQueryData(["available-agents"])).toEqual([kiroBuiltin]);
   });
 });
