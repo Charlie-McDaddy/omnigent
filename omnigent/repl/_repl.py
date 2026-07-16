@@ -5116,6 +5116,17 @@ async def _cmd_model(
     claude / gpt / gemini families (:func:`_render_model_picker`).
     ``/model <#>`` resolves a picker row (:func:`_resolve_model_picker_index`)
     to its model id and sets it exactly as ``/model <id>`` would.
+
+    A bare all-digit argument is ALWAYS read as a picker index, never as a
+    literal model id — this is intentional, not an oversight: real model
+    ids from every provider in the curated catalog carry letters (``gpt-``,
+    ``claude-``, ``gemini-``), so the ambiguity is theoretical for the
+    curated set, and treating digits as an index unconditionally keeps the
+    rule simple and matches the ``/switch <#>`` convention. A gateway model
+    that genuinely has an all-digit id can still be set explicitly by
+    qualifying it with its provider (``/model <provider>/<numeric-id>``) —
+    that string contains ``/`` so it never matches the digit branch.
+
     ``/model`` otherwise changes the *model within the active provider*
     only: ``/model <model>`` / ``/model <active-provider>/<model>``
     validate against the catalog (warn, never block) and set the override;
@@ -5146,7 +5157,12 @@ async def _cmd_model(
         # A ``/model <#>`` picker selection — resolve to the model id at
         # that (1-based) position in the table :func:`_render_model_picker`
         # printed, then fall through to the exact same set-override path a
-        # typed ``/model <id>`` takes below.
+        # typed ``/model <id>`` takes below. This is an unconditional rule
+        # (see the docstring): every curated id contains letters, so a bare
+        # digit string is never a real model id in this catalog — it is
+        # always treated as an index, in range or not. A literal all-digit
+        # gateway model id must be qualified with its provider
+        # (``/model <provider>/<numeric-id>``) to skip this branch.
         resolved = _resolve_model_picker_index(int(value))
         if resolved is None:
             host.output(

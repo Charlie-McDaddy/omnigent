@@ -161,3 +161,49 @@ async def test_model_clear_alias_still_resets_override(
 
     assert session.model_override is None
     assert "model reset to agent default" in _text(host)
+
+
+@pytest.mark.asyncio
+async def test_model_bare_digit_is_always_a_picker_index_never_a_literal_id(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bare all-digit argument is ALWAYS the picker index, by design.
+
+    Locks in the documented tradeoff in ``_cmd_model``'s docstring: every
+    curated model id contains letters, so an in-range digit string is
+    never ambiguous with a real catalog id — it always resolves through
+    the picker, never sets the digit string itself as a literal override.
+    A regression here (treating the digits as a literal id when no picker
+    row happens to collide) would silently select the wrong model instead
+    of the one implied by the picker table.
+    """
+    monkeypatch.setenv("OMNIGENT_CONFIG_HOME", str(tmp_path))
+    host = DummyHost()
+    fmt = RichBlockFormatter()
+    session = DummySession()
+
+    entries = _model_picker_entries()
+    await handle_slash_command("/model 1", session, None, host, fmt)  # type: ignore[arg-type]
+
+    assert session.model_override == entries[0][1]
+    assert session.model_override != "1"
+
+
+@pytest.mark.asyncio
+async def test_model_numeric_gateway_id_escapes_picker_via_provider_prefix(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A genuinely numeric model id can still be set via ``<provider>/<id>``.
+
+    The documented escape hatch for an all-digit gateway model id: qualify
+    it with a provider prefix so the string contains ``/`` and never
+    matches the bare-digit picker-index branch.
+    """
+    monkeypatch.setenv("OMNIGENT_CONFIG_HOME", str(tmp_path))
+    host = DummyHost()
+    fmt = RichBlockFormatter()
+    session = DummySession()
+
+    await handle_slash_command("/model openrouter/123", session, None, host, fmt)  # type: ignore[arg-type]
+
+    assert session.model_override == "openrouter/123"
