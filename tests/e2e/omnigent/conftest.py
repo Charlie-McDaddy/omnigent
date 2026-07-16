@@ -148,7 +148,7 @@ def mock_credentials_env(
     env["OMNIGENT_NO_UPDATE_CHECK"] = "1"
     config_home = tmp_path_factory.mktemp("omnigent-mock-e2e-config")
     (config_home / "config.yaml").write_text(
-        "auth:\n  type: api_key\n",
+        "auto_open_conversation: false\nauth:\n  type: api_key\n",
         encoding="utf-8",
     )
     env["OMNIGENT_CONFIG_HOME"] = str(config_home)
