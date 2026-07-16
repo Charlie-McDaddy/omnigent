@@ -126,23 +126,31 @@ Routing's own brain is pinned to **`gpt-5.6-sol`** via the
 notes `openai-agents` "is intentionally NOT in [the codex single-vendor]
 set: ... the harness is multi-model like pi and accepts any validated id").
 
-**This id is an assumption, flagged for correction.** `gpt-5.6-sol` is not
-one of the curated static ids this repo's own code currently lists anywhere
-— the curated codex/gateway catalog in
+**This id is confirmed.** The GPT-5.6 family uses a three-tier naming
+scheme: the bare alias `gpt-5.6` routes to `gpt-5.6-sol`, the
+flagship-capability model; `gpt-5.6-terra` gives strong performance at a
+lower price; `gpt-5.6-luna` is the efficient, high-volume tier. `gpt-5.6-sol`
+is not one of the curated static ids this repo's own code lists anywhere —
+the curated codex/gateway catalog in
 [`omnigent/model_catalog.py`](../../omnigent/model_catalog.py) only lists
-`("gpt-5.5", "gpt-5.4", "gpt-5.4-mini")` for the `codex` subscription CLI. I
-inferred the spelling `gpt-5.6-sol` from this codebase's existing id
-conventions (a bare `gpt-<major>.<minor>` vendor id, optionally suffixed —
-see the `-mini` / `-codex` suffixes throughout
+`("gpt-5.5", "gpt-5.4", "gpt-5.4-mini")` for the `codex` subscription CLI —
+but that list is an informational curated set for the codex CLI's own
+subscription login, not a validation allowlist; it doesn't gate Routing's
+`openai-agents-sdk` executor model at all. `gpt-5.6-sol` matches this
+codebase's existing id conventions (a bare `gpt-<major>.<minor>` vendor id,
+optionally suffixed — see the `-mini` / `-codex` suffixes throughout
 [`omnigent/inner/codex_executor.py`](../../omnigent/inner/codex_executor.py)
-and [`omnigent/cursor_native.py`](../../omnigent/cursor_native.py)) and from
+and [`omnigent/cursor_native.py`](../../omnigent/cursor_native.py)) and
+passes
 [`omnigent/model_override.py`](../../omnigent/model_override.py)'s model-id
-charset (`_MODEL_ID_RE`), which accepts it. Because it isn't curated
-anywhere in-repo, a human should confirm the real id (and whether it needs a
-`databricks-` gateway prefix, per
-[`omnigent/model_override.py`](../../omnigent/model_override.py)'s
-`normalize_model_for_provider`) before this agent is run against a live
-provider.
+charset (`_MODEL_ID_RE`).
+
+Flagship tier (`sol`) is the right choice for Routing's own reasoning: it
+has to reliably decide which sub-agent/model to dispatch for a given task
+and review sub-agent work itself before reporting a verdict upstream — both
+of which benefit more from top-tier reasoning than from `terra`/`luna`'s
+cost or throughput advantages, which matter more for the high-volume
+sub-agent work Routing delegates out, not for Routing's own brain.
 
 To be precise about what does and doesn't catch a wrong id here: `gpt-5.6-sol`
 is Routing's own top-level `executor.model`, not a per-dispatch sub-agent
@@ -157,9 +165,10 @@ just stores `executor.model` as a string) nor
 (`validate_omnigent_executor` checks only `executor.config.harness`) validate
 the *content* of a top-level `executor.model` string — confirmed by running
 this bundle through `omnigent.spec.parser.parse` +
-`omnigent.spec.validator.validate` below, which reports it as valid
-regardless of whether `gpt-5.6-sol` actually resolves to a real model. So an
-incorrect id here is not caught by schema validation or by any dispatch-time
-guard; it would only surface as a runtime failure from the resolved
-OpenAI-compatible / gateway provider (e.g. a "model not found"-style API
-error) the first time Routing is actually run against live credentials.
+`omnigent.spec.validator.validate` below, which reports it as valid without
+checking whether the id actually resolves to a real model on the provider
+side. So if this or any other top-level `executor.model` were ever wrong, it
+would not be caught by schema validation or by any dispatch-time guard — it
+would only surface as a runtime failure from the resolved OpenAI-compatible
+/ gateway provider (e.g. a "model not found"-style API error) the first time
+the agent is actually run against live credentials.
