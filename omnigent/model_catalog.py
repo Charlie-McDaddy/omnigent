@@ -91,6 +91,43 @@ _SUBSCRIPTION_STATIC_MODELS: dict[str, tuple[str, ...]] = {
     "codex": ("gpt-5.5", "gpt-5.4", "gpt-5.4-mini"),
 }
 
+# Curated ids for the interactive REPL ``/model`` picker (see
+# ``omnigent/repl/_repl.py``'s ``_cmd_model``), grouped by vendor family so
+# the picker can render claude / gpt / gemini sections without a live
+# network fetch — the picker must render instantly, the same reasoning
+# behind :data:`_SUBSCRIPTION_STATIC_MODELS` above, whose claude/codex ids
+# this reuses. Gemini has no subscription CLI (antigravity is Gemini-native
+# but authenticates via API key / Vertex, not a CLI login) so no curated
+# Gemini list existed anywhere in the codebase before this; ids mirror the
+# ones already referenced elsewhere (``antigravity_native_executor.py``'s
+# default, ``cursor_native.py``'s curated picker).
+_PICKER_STATIC_MODELS: dict[str, tuple[str, ...]] = {
+    "claude": _SUBSCRIPTION_STATIC_MODELS["claude"],
+    "gpt": _SUBSCRIPTION_STATIC_MODELS["codex"],
+    "gemini": (
+        "gemini-3.1-pro",
+        "gemini-3.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+    ),
+}
+
+
+def picker_models_by_family() -> dict[str, tuple[str, ...]]:
+    """Return curated model ids grouped by vendor family, for UI pickers.
+
+    Backs the REPL's no-arg ``/model`` picker (claude / gpt / gemini
+    sections). Static and network-free like
+    :data:`_SUBSCRIPTION_STATIC_MODELS` (whose claude/codex ids it
+    reuses) — a picker command must render instantly, not block on a
+    provider round-trip.
+
+    :returns: Mapping of family label (``"claude"``, ``"gpt"``,
+        ``"gemini"``) to its curated model ids, in display order.
+    """
+    return dict(_PICKER_STATIC_MODELS)
+
+
 # Harness spellings -> the workflow harness whose provider resolution they
 # share; natives resolve via their SDK sibling (the resolve_native_* rule).
 _PROVIDER_RESOLUTION_HARNESS: dict[str, str] = {

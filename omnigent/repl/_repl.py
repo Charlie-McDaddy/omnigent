@@ -4772,6 +4772,70 @@ async def _cmd_effort(
 
 _MODEL_CLEAR_ALIASES = {"default", "off", "reset"}
 
+# Display order for the no-arg ``/model`` picker's family sections.
+_MODEL_PICKER_FAMILY_ORDER = ("claude", "gpt", "gemini")
+
+
+def _model_picker_entries() -> list[tuple[str, str]]:
+    """Flatten the curated picker catalog into ``(family, model_id)`` rows.
+
+    Fixed, deterministic order (:data:`_MODEL_PICKER_FAMILY_ORDER`, then
+    each family's curated order) so a table index printed by one
+    ``/model`` call still resolves to the same model on a follow-up
+    ``/model <#>`` call —
+    :func:`omnigent.model_catalog.picker_models_by_family` is a static
+    dict with no network fetch, so nothing changes between calls.
+
+    :returns: ``(family, model_id)`` pairs in display order.
+    """
+    from omnigent.model_catalog import picker_models_by_family
+
+    by_family = picker_models_by_family()
+    return [
+        (family, model_id)
+        for family in _MODEL_PICKER_FAMILY_ORDER
+        for model_id in by_family.get(family, ())
+    ]
+
+
+def _render_model_picker(host: TerminalHost, fmt: RichBlockFormatter) -> None:
+    """Render the no-arg ``/model`` picker: a numbered table + usage hint.
+
+    Mirrors the ``/switch`` no-arg table convention (numbered rows, then
+    ``/switch <#>`` to select) so pickers stay consistent across the
+    REPL's slash commands.
+
+    :param host: The terminal host to render the table and hint into.
+    :param fmt: The active formatter (supplies the accent/muted styles).
+    """
+    from rich.table import Table
+    from rich.text import Text
+
+    entries = _model_picker_entries()
+    table = Table(title="Pick a model…")
+    table.add_column("#", style="bold " + fmt.accent)
+    table.add_column("Family", style="dim")
+    table.add_column("Model")
+    for i, (family, model_id) in enumerate(entries, 1):
+        table.add_row(str(i), family, model_id)
+    host.output(table)
+    host.output(
+        Text.from_markup(f"  [{fmt.muted}]/model <#> or /model <name> to switch[/{fmt.muted}]")
+    )
+
+
+def _resolve_model_picker_index(index: int) -> str | None:
+    """Resolve a 1-based ``/model <#>`` picker index to a model id.
+
+    :param index: The 1-based index the user typed.
+    :returns: The model id at that index (same order :func:`_render_model_picker`
+        printed it in), or ``None`` when out of range.
+    """
+    entries = _model_picker_entries()
+    if index < 1 or index > len(entries):
+        return None
+    return entries[index - 1][1]
+
 
 def _model_readout_harness(active_model: str | None) -> str:
     """Infer the harness whose active credential ``/model`` should describe.
@@ -5048,7 +5112,11 @@ async def _cmd_model(
 
     No-arg shows the active credential (model · provider · source) via
     :func:`describe_active_credential` plus the other configured
-    providers. ``/model`` changes the *model within the active provider*
+    providers, then a picker table of curated model ids across the
+    claude / gpt / gemini families (:func:`_render_model_picker`).
+    ``/model <#>`` resolves a picker row (:func:`_resolve_model_picker_index`)
+    to its model id and sets it exactly as ``/model <id>`` would.
+    ``/model`` otherwise changes the *model within the active provider*
     only: ``/model <model>`` / ``/model <active-provider>/<model>``
     validate against the catalog (warn, never block) and set the override;
     a bare ``/model <active-provider>`` resolves that provider's default
@@ -5071,7 +5139,25 @@ async def _cmd_model(
         config = effective_config_with_detected(load_config())
         for line in _build_model_readout_lines(config, harness, current):
             host.output(Text.from_markup(f"  [{fmt.muted}]{line}[/{fmt.muted}]"))
+        _render_model_picker(host, fmt)
         return
+
+    if value.isdigit():
+        # A ``/model <#>`` picker selection — resolve to the model id at
+        # that (1-based) position in the table :func:`_render_model_picker`
+        # printed, then fall through to the exact same set-override path a
+        # typed ``/model <id>`` takes below.
+        resolved = _resolve_model_picker_index(int(value))
+        if resolved is None:
+            host.output(
+                Text.from_markup(
+                    f"  [bold red]No model #{value} "
+                    f"({len(_model_picker_entries())} listed). Run /model with no "
+                    f"argument to see the table.[/]"
+                )
+            )
+            return
+        value = resolved
 
     if value.lower() in _MODEL_CLEAR_ALIASES:
         result = session.set_model_override(None)
